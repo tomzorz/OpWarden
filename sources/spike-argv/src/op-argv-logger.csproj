@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- The whole point: this thing must be named op.exe so it can sit ahead of
+         the real op CLI on PATH. -->
+    <AssemblyName>op</AssemblyName>
+    <RootNamespace>OpWarden.SpikeArgv</RootNamespace>
+
+    <!-- The eventual shim is NativeAOT, so publishing this one AOT doubles as a
+         passthrough proof. Falls back to a plain publish if the C++ toolchain
+         is missing; see README. -->
+    <PublishAot>true</PublishAot>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+</Project>
