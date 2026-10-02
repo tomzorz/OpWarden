@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="OpWarden.Broker/OpWarden.Broker.csproj" />
+  <Project Path="OpWarden.Core/OpWarden.Core.csproj" />
+  <Project Path="OpWarden.Probe/OpWarden.Probe.csproj" />
+  <Project Path="OpWarden.Shim/OpWarden.Shim.csproj" />
+  <Project Path="OpWarden.Tests/OpWarden.Tests.csproj" />
+</Solution>

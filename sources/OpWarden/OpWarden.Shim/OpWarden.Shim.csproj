@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+    <!-- The shim takes the op CLI's file name so it sits ahead of it on PATH (REQ-SHIM-1). -->
+    <AssemblyName>op</AssemblyName>
+
+    <!-- The shim refuses to run any executable carrying this product name as the op CLI. -->
+    <Product>OpWarden</Product>
+
+    <!-- REQ-SHIM-8: cold start is paid on every op invocation, so the shim is NativeAOT. -->
+    <PublishAot>true</PublishAot>
+    <OptimizationPreference>Speed</OptimizationPreference>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpWarden.Core\OpWarden.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -24,4 +24,6 @@ dotnet test
 dotnet format
 ```
 
-The shim publishes NativeAOT (`dotnet publish OpWarden.Shim -c Release`). If the native link fails on a machine whose MSVC environment is broken, `-t:IlcCompile` still proves the code is AOT-clean.
+Tests run on Microsoft.Testing.Platform (`global.json`); pass xunit filters after `--`, for example `dotnet test -- --filter-method "*Shim*"`. The end-to-end tests run the built shim and probe as real processes, so build before `dotnet test --no-build`.
+
+The shim publishes NativeAOT (`dotnet publish OpWarden.Shim -c Release -o <dir>`). If the native link cannot find `vswhere.exe`, put `C:\Program Files (x86)\Microsoft Visual Studio\Installer` on PATH; if it still fails, `-t:IlcCompile` proves the code is AOT-clean. The REQ-SHIM-8 latency test runs only against a published shim: set `OPWARDEN_AOT_SHIM` to its `op.exe`.

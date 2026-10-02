@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- Test names are sentences; underscores keep them readable in the runner. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- xunit.v3 runs on Microsoft.Testing.Platform (global.json), so no VSTest adapter. -->
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpWarden.Core\OpWarden.Core.csproj" />
+    <ProjectReference Include="..\OpWarden.Broker\OpWarden.Broker.csproj" />
+    <!-- Built for their output only: the end-to-end tests run them as real processes. -->
+    <ProjectReference Include="..\OpWarden.Shim\OpWarden.Shim.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\OpWarden.Probe\OpWarden.Probe.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

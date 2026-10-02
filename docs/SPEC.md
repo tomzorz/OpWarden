@@ -55,7 +55,7 @@ The vault, item, and key that an invocation targets, when the shim can parse the
 Do not use: target, resource.
 
 ### secret reference (noun)
-An `op://<vault>/<item>/<field>` string in an argument, in an environment file, or in a template file.
+An `op://<vault>/<item>/<field>` string in an argument, in an environment variable, in an environment file, or in a template file.
 Do not use: op URI, ref.
 
 ### alias pair (noun)
@@ -257,9 +257,26 @@ REQ-CLAS-9: For each invocation, the shim MUST parse the vault, the item, and th
 
 REQ-CLAS-10: The shim MUST parse a secret reference in an argument into the vault, the item, and the key of the secret path.
 
-REQ-CLAS-11: For a `run` invocation, the shim MUST parse each secret reference from the arguments, from the named environment file, and from the named template file.
+REQ-CLAS-11: For a `run` invocation, the shim MUST parse each secret reference from each of the following sources:
+
+- the arguments
+- each environment variable that the shim inherits
+- each named environment file
+- the named template file
 
 REQ-CLAS-12: When the shim cannot read a named environment file or a named template file, the shim MUST mark the invocation's secret references as unknown.
+
+REQ-CLAS-13: When a named environment file and an environment variable that the shim inherits assign the same variable name, the shim MUST use the value from the environment file. When two named environment files assign the same variable name, the shim MUST use the value from the file named last. The reason is that the op CLI applies the same precedence.
+
+REQ-CLAS-14: Before the shim parses a secret reference from an environment variable, from an environment file, or from a template file, the shim MUST replace each `$NAME` and each `${NAME}` in it with the value of the environment variable `NAME` that the shim inherits.
+
+REQ-CLAS-15: When the shim inherits no environment variable for a name in a secret reference, the shim MUST mark the invocation's secret references as unknown. When that variable's value contains `/` or `?`, the shim MUST mark the invocation's secret references as unknown. The reason is that such a value moves the boundaries between vault, item, and key, and the op CLI does not document the order in which it expands and splits.
+
+REQ-CLAS-16: When the shim cannot determine where a secret reference ends, the shim MUST mark the invocation's secret references as unknown. The reason is that a secret reference can contain spaces, so a reference outside `{{ }}` in a template file has no visible end when a word follows it.
+
+REQ-CLAS-17: When an `op inject` invocation names no template file, the shim MUST mark the invocation's secret references as unknown. The reason is that the template then arrives on standard input, and the shim passes standard input to the op CLI unread.
+
+**Reference-source decision (2026-10-02):** the shim parses secret references from the environment variables it inherits, not only from arguments and files. The op CLI's own help for `op run` states that the op CLI scans environment variables for secret references, with environment files taking precedence. The first draft of REQ-CLAS-11 missed that source, so REQ-RULE-13 would have evaluated an `op run` with no per-reference tuple for each secret held in the shell environment. Implementation of the shim found the gap.
 
 ## 7. Requirements: rules, prompt, and verdict
 
