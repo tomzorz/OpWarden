@@ -30,9 +30,9 @@ Serialization is source-generated `System.Text.Json` everywhere. Reflection-base
 
 The session-agent spawn question below gets validated before step 5 builds on it.
 
-## AOT only where it pays
+## AOT everywhere, for now
 
-REQ-SHIM-8 (under 50 ms on a rule hit) is the reason for NativeAOT, and that budget binds the shim alone. The broker and the session agent are long-running, so JIT start-up is irrelevant there, and a JIT session agent can use WPF for the prompt, whose per-field pin/wildcard controls (REQ-RULE-7) no AOT-compatible UI stack matches without a dependency. Section 3 and section 14 step 1 still say all three executables are NativeAOT; that wording needs an amendment before the broker or session agent ships as JIT.
+Section 3 and section 14 step 1 make all three executables NativeAOT, and that stands. REQ-SHIM-8 (under 50 ms on a rule hit) is the only hard reason, and it binds the shim alone, so the broker and session agent could run JIT. The current lean is to keep them AOT and write the prompt and management window in raw Win32, because the UI is small. Settle it when the session agent is built: if raw Win32 cannot carry the per-field pin/wildcard controls of REQ-RULE-7 without pain, a JIT session agent with WPF needs a spec amendment first.
 
 ## Win32 map
 
