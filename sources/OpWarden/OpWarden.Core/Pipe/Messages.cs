@@ -16,12 +16,6 @@ public sealed record ShimRequest(
     IReadOnlyList<SecretPath> SecretReferences,
     bool SecretReferencesUnknown);
 
-public enum Verdict
-{
-    Allow,
-    Deny,
-}
-
 /// <summary>
 /// The broker's answer. An <see cref="Verdict.Allow"/> carries either the op CLI's path
 /// (REQ-SHIM-3) or cached output (REQ-SHIM-10), never both.

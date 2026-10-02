@@ -70,6 +70,10 @@ Do not use: request, tuple.
 A stored pattern over the request tuple, with a verdict, where each of the five fields is either a pinned literal value or a wildcard.
 Do not use: policy, permission.
 
+### possible match (noun)
+The comparison result when a pinned rule field and a request-tuple field might name the same value but the broker cannot prove it, for example when the request-tuple field is unknown.
+Do not use: partial match, maybe.
+
 ### verdict (noun)
 Exactly one of `allow` or `deny`.
 Do not use: result, decision.
@@ -314,9 +318,31 @@ REQ-RULE-16: When the broker compares a rule field with a request-tuple field, t
 
 REQ-RULE-17: The rule store MAY mark a vault as `prompt-always`.
 
-REQ-RULE-18: For an invocation whose vault is marked `prompt-always`, the broker MUST show a prompt, and the prompt MUST offer only `allow-once` and `disallow-once`.
+REQ-RULE-18: For an invocation whose vault is marked `prompt-always`, and that no `deny` rule matches, the broker MUST show a prompt, and the prompt MUST offer only `allow-once` and `disallow-once`. When a `deny` rule matches, the broker MUST return `deny` without a prompt. The reason is that the prompt could offer only an `allow-once` that the stored `deny` rule already refuses.
 
 REQ-RULE-19: For a `read` invocation from a named agent or from the interactive user, the prompt MUST offer the cache-grant control. When the user attaches a cache grant to `always-allow`, the broker MUST store the cache grant on the stored rule.
+
+### 7.1 Matching fields
+
+**Matching decision (2026-10-02):** the broker compares fields with three results: match, possible match, and no match. A `deny` rule acts on a possible match, and an `allow` rule does not. Before this decision, the spec did not say how a pinned field compares with an unknown field. Without a possible match, an agent could avoid each pinned `deny` rule by omitting `--vault`, or by naming a vault by UUID instead of by name.
+
+REQ-RULE-20: When the broker compares a pinned rule field with an unknown request-tuple field, the result MUST be a possible match.
+
+REQ-RULE-21: A `deny` rule MUST match a request tuple when no field of the rule is a no match. An `allow` rule MUST match a request tuple only when each field of the rule is a match. REQ-RULE-2 then selects among the matching rules.
+
+REQ-RULE-22: The broker MUST compare vault names, item names, and keys without regard to letter case. The reason is that the op CLI resolves secret references without regard to letter case.
+
+REQ-RULE-23: When the broker compares a UUID with a name, and the broker stores no alias pair for that UUID, the result MUST be a possible match. The reason is that alias pairs reach the broker only from captured `read` output, so an unseen UUID can name each vault or item.
+
+REQ-RULE-24: When the broker stores an alias pair for a UUID and a name, and the broker also stores a different UUID for the same name, the comparison of that UUID with that name MUST be a possible match. The reason is that two vaults can each hold an item with the same name.
+
+REQ-RULE-25: When one key equals the other key's last `/`-separated part, the comparison MUST be a possible match. The reason is that a secret reference can name a field with its section or without it.
+
+REQ-RULE-26: For REQ-RULE-18, the broker MUST treat a vault that is a possible match for a `prompt-always` vault as marked `prompt-always`.
+
+REQ-RULE-27: For a `run` invocation whose secret references are unknown, the broker MUST NOT return `allow` from rules alone. The broker MUST show a prompt, unless REQ-RULE-13 returns `deny`.
+
+REQ-RULE-28: When two matching `allow` rules tie on specificity, the broker MUST apply the rule with the shorter cache grant, and a rule without a cache grant is the shortest.
 
 ## 8. Requirements: broker trust and rule management
 
@@ -445,6 +471,7 @@ Rollback:
 - Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file.
 - Dropped process-creation events: a dropped event leaves one caller unresolvable for as long as that caller runs, and REQ-CALL-18 then classifies it as `unknown`. The failure is a prompt the interactive user cannot clear, and the failure is not a wrong verdict. The reliability spike measured no drop at 402 process starts per second, which is roughly two orders of magnitude above a normal machine. REQ-CALL-3 keeps the consumer cheap, because a slow consumer is the documented cause of drops.
 - Ancestry that predates the broker: REQ-CALL-5 seeds the map from a snapshot, and a snapshot cannot recover a parent that exited before the snapshot. A process whose recorded parent already exited at broker start therefore resolves no further than itself. The gap closes as processes cycle, and the gap reopens at every broker restart.
+- Field IDs: a secret reference can name a field by its ID instead of its label. Alias pairs cover vaults and items only, so a `deny` rule that pins a key by label does not match the same field named by ID. A `deny` rule that pins the item, or the vault, closes the gap.
 - Machine-wide process observation: the broker sees every process start on the machine for as long as the broker runs. REQ-CALL-4 keeps that record in memory and off both the disk and the audit log, so the exposure is bounded by broker memory, which section 16 already grants to an elevated attacker.
 
 ## 17. Open decisions

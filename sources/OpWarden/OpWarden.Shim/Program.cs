@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO.Pipes;
 using System.Security.Cryptography;
 using System.Text.Json;
+using OpWarden.Core;
 using OpWarden.Core.Pipe;
 
 namespace OpWarden.Shim;
