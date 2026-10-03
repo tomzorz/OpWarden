@@ -1,7 +1,3 @@
-using System.Buffers.Binary;
-using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
-
 namespace OpWarden.Core.Pipe;
 
 /// <summary>
@@ -37,58 +33,29 @@ public static class PipeProtocol
         request.Action == OpAction.Read && verdict.Verdict == Verdict.Allow && verdict.Cached is null;
 
     public static Task WriteAsync(Stream stream, ShimRequest message, CancellationToken cancellationToken) =>
-        WriteFrameAsync(stream, message, ProtocolJsonContext.Default.ShimRequest, cancellationToken);
+        Framing.WriteAsync(stream, message, ProtocolJsonContext.Default.ShimRequest, cancellationToken);
 
     public static Task WriteAsync(Stream stream, VerdictResponse message, CancellationToken cancellationToken) =>
-        WriteFrameAsync(stream, message, ProtocolJsonContext.Default.VerdictResponse, cancellationToken);
+        Framing.WriteAsync(stream, message, ProtocolJsonContext.Default.VerdictResponse, cancellationToken);
 
     public static Task WriteAsync(Stream stream, ReadCapture message, CancellationToken cancellationToken) =>
-        WriteFrameAsync(stream, message, ProtocolJsonContext.Default.ReadCapture, cancellationToken);
+        Framing.WriteAsync(stream, message, ProtocolJsonContext.Default.ReadCapture, cancellationToken);
 
     /// <summary>
     /// Reads the next request, or returns null when the peer closed the pipe cleanly.
     /// </summary>
     public static Task<ShimRequest?> ReadRequestAsync(Stream stream, CancellationToken cancellationToken) =>
-        ReadFrameAsync(stream, ProtocolJsonContext.Default.ShimRequest, cancellationToken);
+        Framing.ReadAsync(stream, ProtocolJsonContext.Default.ShimRequest, cancellationToken);
 
     /// <summary>
     /// Reads the broker's verdict, or returns null when the broker closed the pipe.
     /// </summary>
     public static Task<VerdictResponse?> ReadVerdictAsync(Stream stream, CancellationToken cancellationToken) =>
-        ReadFrameAsync(stream, ProtocolJsonContext.Default.VerdictResponse, cancellationToken);
+        Framing.ReadAsync(stream, ProtocolJsonContext.Default.VerdictResponse, cancellationToken);
 
     /// <summary>
     /// Reads the read capture, or returns null when the shim closed the pipe without one.
     /// </summary>
     public static Task<ReadCapture?> ReadCaptureAsync(Stream stream, CancellationToken cancellationToken) =>
-        ReadFrameAsync(stream, ProtocolJsonContext.Default.ReadCapture, cancellationToken);
-
-    private static async Task WriteFrameAsync<T>(Stream stream, T message, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken)
-    {
-        var payload = JsonSerializer.SerializeToUtf8Bytes(message, typeInfo);
-        if (payload.Length > MaxFrameBytes) throw new InvalidDataException($"OpWarden pipe frame of {payload.Length} bytes exceeds the {MaxFrameBytes}-byte limit ({typeof(T).Name}).");
-
-        var frame = new byte[4 + payload.Length];
-        BinaryPrimitives.WriteInt32LittleEndian(frame, payload.Length);
-        payload.CopyTo(frame, 4);
-        await stream.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task<T?> ReadFrameAsync<T>(Stream stream, JsonTypeInfo<T> typeInfo, CancellationToken cancellationToken)
-        where T : class
-    {
-        var header = new byte[4];
-        var headerRead = await stream.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false, cancellationToken).ConfigureAwait(false);
-        if (headerRead == 0) return null;
-        if (headerRead < header.Length) throw new EndOfStreamException($"OpWarden pipe closed inside a frame header ({headerRead} of 4 bytes, {typeof(T).Name}).");
-
-        var length = BinaryPrimitives.ReadInt32LittleEndian(header);
-        if (length is < 0 or > MaxFrameBytes) throw new InvalidDataException($"OpWarden pipe frame announces {length} bytes, outside 0..{MaxFrameBytes} ({typeof(T).Name}).");
-
-        var payload = new byte[length];
-        await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
-        return JsonSerializer.Deserialize(payload, typeInfo)
-               ?? throw new InvalidDataException($"OpWarden pipe frame decoded to null ({typeof(T).Name}).");
-    }
+        Framing.ReadAsync(stream, ProtocolJsonContext.Default.ReadCapture, cancellationToken);
 }

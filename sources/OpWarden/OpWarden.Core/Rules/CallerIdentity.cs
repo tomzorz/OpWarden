@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace OpWarden.Core.Rules;
 
 /// <summary>
@@ -12,5 +14,6 @@ public sealed record CallerIdentity(string Name)
 
     public static CallerIdentity Agent(string name) => new(name);
 
+    [JsonIgnore]
     public bool IsUnknown => this == Unknown;
 }

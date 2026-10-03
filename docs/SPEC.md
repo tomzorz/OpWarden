@@ -320,7 +320,7 @@ REQ-RULE-17: The rule store MAY mark a vault as `prompt-always`.
 
 REQ-RULE-18: For an invocation whose vault is marked `prompt-always`, and that no `deny` rule matches, the broker MUST show a prompt, and the prompt MUST offer only `allow-once` and `disallow-once`. When a `deny` rule matches, the broker MUST return `deny` without a prompt. The reason is that the prompt could offer only an `allow-once` that the stored `deny` rule already refuses.
 
-REQ-RULE-19: For a `read` invocation from a named agent or from the interactive user, the prompt MUST offer the cache-grant control. When the user attaches a cache grant to `always-allow`, the broker MUST store the cache grant on the stored rule.
+REQ-RULE-19: For an `op read` invocation from a named agent or from the interactive user, the prompt MUST offer the cache-grant control. The reason for `op read` alone is REQ-CACHE-10: the broker caches no other output, so a cache grant on another invocation could never take effect. When the user attaches a cache grant to `always-allow`, the broker MUST store the cache grant on the stored rule.
 
 ### 7.1 Matching fields
 
@@ -355,6 +355,10 @@ REQ-RULE-30: When the broker stores exactly one other form for a pinned value, a
 REQ-RULE-31: When the broker stores more than one other form for a pinned value, the management window MUST show a notice that lists each other form, and the notice MUST NOT offer a second rule.
 
 REQ-RULE-32: When the broker stores a rule from a prompt, and REQ-RULE-29, REQ-RULE-30, or REQ-RULE-31 gives that rule a notice, the session agent MUST show that notice.
+
+REQ-RULE-33: When a prompt lists more than one request tuple, an `always-allow` or `always-disallow` decision MUST store one rule for each listed request tuple, at the scope the user chose.
+
+REQ-RULE-34: The broker MUST reject an `always-allow` or `always-disallow` decision whose scope pins a field that is unknown in at least one listed request tuple. The broker MUST then keep the prompt open. The reason is that a pinned unknown field would store a wildcard, and the stored rule would be broader than the rule the user saw.
 
 ## 8. Requirements: broker trust and rule management
 
@@ -412,7 +416,9 @@ The bypass watcher detects a bypass. The bypass watcher does not prevent a bypas
 
 **Presence decision (2026-08-15):** OpWarden v1 does not query presence. The 30-second timeout covers absence, and REQ-CACHE-7 flushes the cache on lock.
 
-REQ-FAIL-1: When the session agent shows a prompt, the broker MUST start a 30-second timer.
+**Prompt-flow decision (2026-10-03):** the timer starts when a prompt reaches the head of the queue, not when the session agent draws it. Without a connected session agent, nobody can answer, and the timeout turns that state into a `deny` instead of a shim that waits forever.
+
+REQ-FAIL-1: When a prompt reaches the head of the queue, the broker MUST start a 30-second timer, whether or not a session agent is connected.
 
 REQ-FAIL-2: When 30 seconds elapse before the user makes a decision, the broker MUST close the prompt, MUST return `deny`, and MUST record the reason as `timeout` in the audit log.
 
@@ -422,7 +428,9 @@ REQ-FAIL-4: The audit log entry for every invocation MUST record the request tup
 
 REQ-FAIL-5: When a shim's pipe connection closes before the broker returns the verdict, the broker MUST cancel that invocation's prompt, MUST remove that invocation from the queue, and MUST record the reason `abandoned`. The reason for this requirement is that agent harnesses kill timed-out commands, and the broker otherwise prompts for dead callers.
 
-REQ-FAIL-6: The broker MUST queue at most 10 prompts. When the queue is full, the broker MUST return `deny` for each additional invocation that needs a prompt, and MUST record the reason `queue-full`.
+REQ-FAIL-6: The broker MUST queue at most 10 prompts, and the prompt on screen counts as one of the 10. When the queue is full, the broker MUST return `deny` for each additional invocation that needs a prompt, and MUST record the reason `queue-full`.
+
+REQ-FAIL-7: Before a queued prompt reaches the screen, the broker MUST evaluate the rules for its invocation again. When a rule now decides the invocation, the broker MUST return that rule's verdict without the prompt, and MUST record the reason `rule`. The reason is that a decision on an earlier prompt can store the rule that answers a later one.
 
 ## 12. Requirements: audit log
 
@@ -435,6 +443,10 @@ REQ-AUD-3: Each audit-log entry MUST record the timestamp in UTC in ISO 8601 for
 REQ-AUD-4: The broker MUST NOT record any secret value in the audit log. The broker records the key name, never the key's value.
 
 REQ-AUD-5: Each entry for an invocation MUST record the invocation arguments. For a `write` or `manage` invocation, the broker MUST replace the value part of each `field=value` assignment argument with `<redacted>`. The reason is that assignment arguments carry secret values, and REQ-AUD-4 otherwise breaks.
+
+REQ-AUD-6: For each invocation, the broker MUST replace the value of the `--session` flag with `<redacted>`. The reason is that a session token is a credential, whatever the action.
+
+REQ-AUD-7: When the broker cannot append the audit-log entry for an invocation, the broker MUST return `deny`. The reason is that REQ-AUD-1 binds every invocation, and an unrecorded invocation would break it.
 
 ## 13. Procedure: a biometric prompt that OpWarden did not cause
 

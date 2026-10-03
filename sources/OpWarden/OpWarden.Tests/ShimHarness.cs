@@ -20,9 +20,10 @@ internal sealed class ShimHarness : IAsyncDisposable
     {
         _server = new ShimPipeServer(
             PipeName,
-            (request, _) =>
+            (request, clientProcessId, _) =>
             {
                 Requests.Enqueue(request);
+                ClientProcessIds.Enqueue(clientProcessId);
                 return ValueTask.FromResult(verdict(request));
             },
             (_, capture, _) =>
@@ -40,6 +41,8 @@ internal sealed class ShimHarness : IAsyncDisposable
 
     public ConcurrentQueue<Exception> ConnectionErrors { get; } = new();
 
+    public ConcurrentQueue<int> ClientProcessIds { get; } = new();
+
     public static ShimHarness Start(Func<ShimRequest, VerdictResponse> verdict) => new(verdict);
 
     public Task<ReadCapture> CaptureAsync() => _capture.Task.WaitAsync(TimeSpan.FromSeconds(10));
@@ -50,6 +53,32 @@ internal sealed class ShimHarness : IAsyncDisposable
     public ValueTask DisposeAsync() => _server.DisposeAsync();
 
     public static async Task<ShimRun> RunShimAsync(string pipeName, IEnumerable<string> args, IReadOnlyDictionary<string, string>? environment = null, string? stdin = null, string? shimPath = null)
+    {
+        using var shim = StartShim(pipeName, args, environment, shimPath);
+        var stdout = shim.StandardOutput.ReadToEndAsync();
+        var stderr = shim.StandardError.ReadToEndAsync();
+        if (stdin is not null) await shim.StandardInput.WriteAsync(stdin);
+        shim.StandardInput.Close();
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            await shim.WaitForExitAsync(timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            shim.Kill(entireProcessTree: true);
+            throw new TimeoutException($"The shim did not exit within 30 seconds (args: {string.Join(' ', shim.StartInfo.ArgumentList)}).");
+        }
+
+        return new ShimRun(shim.ExitCode, await stdout, await stderr, shim.ExitTime - shim.StartTime);
+    }
+
+    /// <summary>
+    /// Starts the shim with every standard stream redirected, for a test that needs the
+    /// process itself, to kill it mid-prompt for one.
+    /// </summary>
+    public static Process StartShim(string pipeName, IEnumerable<string> args, IReadOnlyDictionary<string, string>? environment = null, string? shimPath = null)
     {
         var startInfo = new ProcessStartInfo(shimPath ?? BuiltExecutables.Shim)
         {
@@ -64,24 +93,7 @@ internal sealed class ShimHarness : IAsyncDisposable
         startInfo.Environment[PipeProtocol.PipeNameVariable] = pipeName;
         foreach (var (name, value) in environment ?? new Dictionary<string, string>()) startInfo.Environment[name] = value;
 
-        using var shim = Process.Start(startInfo) ?? throw new InvalidOperationException($"Could not start the shim at {BuiltExecutables.Shim}.");
-        var stdout = shim.StandardOutput.ReadToEndAsync();
-        var stderr = shim.StandardError.ReadToEndAsync();
-        if (stdin is not null) await shim.StandardInput.WriteAsync(stdin);
-        shim.StandardInput.Close();
-
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        try
-        {
-            await shim.WaitForExitAsync(timeout.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            shim.Kill(entireProcessTree: true);
-            throw new TimeoutException($"The shim did not exit within 30 seconds (args: {string.Join(' ', startInfo.ArgumentList)}).");
-        }
-
-        return new ShimRun(shim.ExitCode, await stdout, await stderr, shim.ExitTime - shim.StartTime);
+        return Process.Start(startInfo) ?? throw new InvalidOperationException($"Could not start the shim at {startInfo.FileName}.");
     }
 }
 

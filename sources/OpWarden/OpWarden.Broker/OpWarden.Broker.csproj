@@ -1,5 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+
+    <!-- LibraryImport marshalling for the Win32 calls (pipe client identity, and more to come). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpWarden.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\OpWarden.Core\OpWarden.Core.csproj" />
   </ItemGroup>

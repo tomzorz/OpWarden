@@ -31,18 +31,37 @@ public sealed class AliasStore
     private readonly Dictionary<(AliasKind, string), HashSet<string>> _idsByName = [];
     private readonly Dictionary<(AliasKind, string), HashSet<string>> _namesById = [];
 
-    public void Add(AliasPair pair)
+    /// <summary>
+    /// Adds a pair and reports whether it was new.
+    /// </summary>
+    public bool Add(AliasPair pair)
     {
         lock (_lock)
         {
             Get(_idsByName, (pair.Kind, Normalize(pair.Name)), StringComparer.Ordinal).Add(pair.Id);
-            Get(_namesById, (pair.Kind, pair.Id), StringComparer.OrdinalIgnoreCase).Add(pair.Name);
+            return Get(_namesById, (pair.Kind, pair.Id), StringComparer.OrdinalIgnoreCase).Add(pair.Name);
         }
     }
 
-    public void AddRange(IEnumerable<AliasPair> pairs)
+    /// <summary>
+    /// Adds pairs and reports whether at least one was new.
+    /// </summary>
+    public bool AddRange(IEnumerable<AliasPair> pairs)
     {
-        foreach (var pair in pairs) Add(pair);
+        var added = false;
+        foreach (var pair in pairs) added |= Add(pair);
+        return added;
+    }
+
+    /// <summary>
+    /// Every pair in the store.
+    /// </summary>
+    public IReadOnlyList<AliasPair> Pairs()
+    {
+        lock (_lock)
+        {
+            return [.. _namesById.SelectMany(entry => entry.Value.Select(name => new AliasPair(entry.Key.Item1, name, entry.Key.Item2)))];
+        }
     }
 
     /// <summary>
