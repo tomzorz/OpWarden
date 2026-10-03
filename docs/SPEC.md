@@ -398,6 +398,8 @@ REQ-INT-7: The broker MUST seal each cache entry over its cache key, its expiry,
 
 REQ-INT-8: When the broker raises a notice while no session agent is connected, the broker MUST hold the notice, and MUST deliver it when a session agent connects. The reason is that the broker checks its files at start, before a session agent exists.
 
+REQ-INT-9: The broker MUST seal the alias pairs it holds in memory, under the in-memory key of REQ-INT-6, and MUST verify that seal before each evaluation. When the seal fails, the broker MUST report the failure as REQ-INT-3 states, and MUST reload the alias file from disk. The reason is that an alias pair decides whether an `allow` rule covers a request (REQ-RULE-24).
+
 ## 9. Requirements: cache
 
 REQ-CACHE-1: The broker MUST hold the cache in process memory only, and MUST NOT write a cached value to disk.
@@ -478,6 +480,12 @@ REQ-AUD-6: For each invocation, the broker MUST replace the value of the `--sess
 
 REQ-AUD-7: When the broker cannot append the audit-log entry for an invocation, the broker MUST return `deny`. The reason is that REQ-AUD-1 binds every invocation, and an unrecorded invocation would break it.
 
+REQ-AUD-8: Each audit-log entry MUST carry a chain value: an HMAC-SHA256, under the integrity key of REQ-INT-2, over the previous entry's chain value and the entry's own bytes. The first entry of a log chains from 32 zero bytes. The reason is that a change to one entry then breaks the chain value of each later entry, and only the broker can compute new chain values.
+
+REQ-AUD-9: The broker MUST record in the vault the number of entries the audit log holds, at least every 30 seconds and when the broker stops. The reason is that deleting entries at the end of the log leaves a valid chain, and the recorded count reveals the deletion. The interval, not each append, bounds the cost, because a vault write per invocation would break the latency target of REQ-SHIM-8.
+
+REQ-AUD-10: At start, the broker MUST verify the chain of the whole audit log, and MUST compare the entry count with the count the vault records. When the chain breaks, when the log holds fewer entries than the vault records, or when the log is missing although the vault records entries, the broker MUST move the log aside, MUST begin a new log, and MUST report the failure as REQ-INT-3 states.
+
 ## 13. Procedure: a biometric prompt that OpWarden did not cause
 
 After OpWarden is installed, every cooperative invocation reaches the desktop app through the shim. A biometric prompt that no OpWarden activity explains therefore indicates a bypass.
@@ -523,6 +531,7 @@ Rollback:
 - Elevated attacker: a process with an elevated Administrators token can stop the broker, edit the rule store, and read broker memory. OpWarden's privilege separation targets non-elevated same-user processes, which is what agents are.
 - Session-agent replacement: the pinning in REQ-TRUST-3 and REQ-TRUST-4 raises the bar against decision forgery. A same-user process that kills the session agent and races the broker's restart is detectable through the audit log, not preventable.
 - Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file, but REQ-CACHE-14 means only ciphertext reaches it.
+- Audit-log tail between anchors: REQ-AUD-9 records the entry count at intervals, so deleting the entries written since the last count goes unnoticed. The window is at most 30 seconds of entries.
 - Integrity in the console broker: the console broker runs as the interactive user, so the integrity key of REQ-INT-2 and the in-memory key of REQ-INT-6 are within that user's reach. A process that decrypts the vault, or reads the in-memory key from broker memory, can forge a seal. Section 8.1 targets file edits and memory edits, and the service account is what puts the keys out of reach.
 - Dropped process-creation events: a dropped event leaves one caller unresolvable for as long as that caller runs, and REQ-CALL-18 then classifies it as `unknown`. The failure is a prompt the interactive user cannot clear, and the failure is not a wrong verdict. The reliability spike measured no drop at 402 process starts per second, which is roughly two orders of magnitude above a normal machine. REQ-CALL-3 keeps the consumer cheap, because a slow consumer is the documented cause of drops.
 - Ancestry that predates the broker: REQ-CALL-5 seeds the map from a snapshot, and a snapshot cannot recover a parent that exited before the snapshot. A process whose recorded parent already exited at broker start therefore resolves no further than itself. The gap closes as processes cycle, and the gap reopens at every broker restart.

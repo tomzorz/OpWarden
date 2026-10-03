@@ -184,6 +184,22 @@ public sealed class CacheFlowTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Alias_pairs_changed_in_broker_memory_are_reported_at_the_next_evaluation()
+    {
+        await using var broker = BrokerHarness.Start(Claude, [new Rule(Claude, OpAction.Read, null, null, null, Verdict.Allow)]);
+        await using var agent = await broker.ConnectAgentAsync();
+        broker.Aliases.Add(new AliasPair(AliasKind.Item, "GitHub", "q1w2e3r4t5y6u7i8o9p0a1s2d3"));
+        var idsByName = (Dictionary<(AliasKind, string), HashSet<string>>)typeof(AliasStore).GetField("_idsByName", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(broker.Aliases)!;
+        idsByName[(AliasKind.Item, "PAYROLL")] = ["q1w2e3r4t5y6u7i8o9p0a1s2d3"];
+
+        await broker.RunShimAsync(["read", "op://V/I/K"]);
+
+        Assert.Equal("OpWarden integrity warning", (await agent.NextAsync<ShowNotice>()).Title);
+        Assert.True(broker.Aliases.IsIntact());
+        Assert.Contains(broker.AuditEntries(), e => e.GetProperty("event").GetString() == "integrity-failure");
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         for (var i = 0; i < 100 && !condition(); i++) await Task.Delay(50);

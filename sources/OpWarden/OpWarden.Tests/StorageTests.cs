@@ -142,6 +142,20 @@ public sealed class StorageTests : IDisposable
     }
 
     [Fact]
+    public void Alias_pairs_changed_in_broker_memory_fail_their_seal()
+    {
+        var store = new AliasFile(File("aliases.json"), Vault(), _alarms.Add).Load();
+        store.Add(new AliasPair(AliasKind.Item, "GitHub", "q1w2e3r4t5y6u7i8o9p0a1s2d3"));
+        Assert.True(store.IsIntact());
+
+        // Play the attacker with the broker's memory: point another name at the same item.
+        var idsByName = (Dictionary<(AliasKind, string), HashSet<string>>)typeof(AliasStore).GetField("_idsByName", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(store)!;
+        idsByName[(AliasKind.Item, "PAYROLL")] = ["q1w2e3r4t5y6u7i8o9p0a1s2d3"];
+
+        Assert.False(store.IsIntact());
+    }
+
+    [Fact]
     public void A_vault_that_cannot_be_decrypted_is_tampering()
     {
         Vault();
@@ -163,10 +177,89 @@ public sealed class StorageTests : IDisposable
 
     // ---- audit log ----------------------------------------------------------------
 
+    private AuditLog OpenAudit(IntegrityVault? vault = null) => AuditLog.Open(File("audit.jsonl"), vault ?? Vault(), out _lastAuditProblem);
+
+    private string? _lastAuditProblem;
+
+    private static AuditEntry Entry(int n) => new(DateTimeOffset.UtcNow, "invocation", CallerIdentity.InteractiveUser, Command: $"whoami {n}");
+
+    [Fact]
+    public void An_intact_audit_log_reopens_and_continues_its_chain()
+    {
+        using (var log = OpenAudit())
+        {
+            log.Append(Entry(1));
+            log.Append(Entry(2));
+        }
+
+        using (var log = OpenAudit()) log.Append(Entry(3));
+
+        using var reopened = OpenAudit();
+        Assert.Null(_lastAuditProblem);
+        Assert.Equal(3, System.IO.File.ReadAllLines(File("audit.jsonl")).Length);
+    }
+
+    [Theory]
+    [InlineData("edit")]
+    [InlineData("delete-middle")]
+    [InlineData("insert")]
+    [InlineData("truncate-tail")]
+    public void A_changed_audit_log_is_moved_aside_and_a_new_one_begins(string change)
+    {
+        using (var log = OpenAudit())
+        {
+            for (var i = 1; i <= 4; i++) log.Append(Entry(i));
+        }
+
+        var lines = System.IO.File.ReadAllLines(File("audit.jsonl")).ToList();
+        switch (change)
+        {
+            case "edit": lines[1] = lines[1].Replace("whoami 2", "whoami 9", StringComparison.Ordinal); break;
+            case "delete-middle": lines.RemoveAt(1); break;
+            case "insert": lines.Insert(2, lines[2]); break;
+            case "truncate-tail": lines.RemoveAt(3); break;
+        }
+
+        System.IO.File.WriteAllLines(File("audit.jsonl"), lines);
+
+        using var reopened = OpenAudit();
+        Assert.NotNull(_lastAuditProblem);
+        Assert.False(System.IO.File.Exists(File("audit.jsonl")));
+        Assert.Single(_directory.GetFiles("audit.jsonl.tampered-*"));
+    }
+
+    [Fact]
+    public void Lines_written_after_the_last_anchor_are_not_a_problem()
+    {
+        var vault = Vault();
+        using (var log = OpenAudit(vault))
+        {
+            log.Append(Entry(1));
+        }
+
+        // A crash after this line and before the next anchor leaves the log ahead of it.
+        var stale = vault.Generation("audit");
+        using (var log = OpenAudit(vault)) log.Append(Entry(2));
+        vault.SetGeneration("audit", stale);
+
+        using var reopened = OpenAudit(vault);
+        Assert.Null(_lastAuditProblem);
+    }
+
+    [Fact]
+    public void A_deleted_audit_log_is_noticed()
+    {
+        using (var log = OpenAudit()) log.Append(Entry(1));
+        System.IO.File.Delete(File("audit.jsonl"));
+
+        using var reopened = OpenAudit();
+        Assert.Contains("missing", _lastAuditProblem, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void The_audit_log_appends_one_utc_json_line_per_entry_without_empty_fields()
     {
-        var log = new AuditLog(File("audit.jsonl"));
+        using var log = OpenAudit();
         log.Append(new AuditEntry(new DateTimeOffset(2026, 10, 3, 14, 0, 0, TimeSpan.FromHours(2)), "invocation", CallerIdentity.InteractiveUser, Action: OpAction.Meta, Verdict: Verdict.Allow, Reason: VerdictReason.QueueFull));
         log.Append(new AuditEntry(DateTimeOffset.UtcNow, "rule-change", Source: RuleChangeSource.Prompt));
 

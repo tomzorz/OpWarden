@@ -153,9 +153,12 @@ public sealed class AliasFile(string path, IntegrityVault vault, Action<string> 
 {
     private const string SealName = "aliases";
 
+    /// <summary>
+    /// Loads the pairs into a store sealed in memory (REQ-INT-9).
+    /// </summary>
     public AliasStore Load()
     {
-        var store = new AliasStore();
+        var store = new AliasStore(data => MemorySeal.Of(data));
         try
         {
             var content = SealedFile.Read(path, SealName, vault);

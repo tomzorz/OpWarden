@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using OpWarden.Broker.Audit;
 using OpWarden.Broker.Cache;
+using OpWarden.Broker.Integrity;
 using OpWarden.Broker.Prompts;
 using OpWarden.Broker.Storage;
 using OpWarden.Core;
@@ -28,6 +29,7 @@ public sealed class BrokerService(
     AuditLog audit,
     PromptQueue prompts,
     SecretCache cache,
+    IntegrityAlarm alarm,
     Action<AgentMessage> notify,
     Func<int, CallerIdentity> resolveCaller)
 {
@@ -142,8 +144,18 @@ public sealed class BrokerService(
         }
     }
 
-    private Evaluation Evaluate(CallerIdentity caller, ShimRequest request) =>
-        new RuleEngine(rules.Current, aliases).Evaluate(caller, request.Action, request.Path, request.SecretReferences, request.SecretReferencesUnknown);
+    private Evaluation Evaluate(CallerIdentity caller, ShimRequest request)
+    {
+        // REQ-INT-9: alias pairs decide whether an allow rule covers a request, so they
+        // are checked before every evaluation, like the rules are.
+        if (!aliases.IsIntact())
+        {
+            alarm.Raise("The alias pairs in broker memory no longer match their seal: something outside OpWarden changed the broker's memory. They were reloaded from disk.");
+            aliases.Reset(aliasFile.Load().Pairs());
+        }
+
+        return new RuleEngine(rules.Current, aliases).Evaluate(caller, request.Action, request.Path, request.SecretReferences, request.SecretReferencesUnknown);
+    }
 
     /// <summary>
     /// A rule's verdict, carrying the rule's cache grant when it allows (REQ-RULE-19).

@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace OpWarden.Core.Rules;
 
 public enum AliasKind
@@ -24,12 +27,30 @@ public sealed record AliasPair(AliasKind Kind, string Name, string Id);
 /// ceiling: item pairs are not scoped by vault, nor field pairs by item, so a name that
 /// is ambiguous across vaults stays ambiguous everywhere, even where the vault would
 /// settle it. That only costs prompts, never a wrong allow.
+///
+/// Given a sealer, the store keeps a seal over both of its indexes, renewed under the
+/// same lock as each change, so <see cref="IsIntact"/> tells whether anything changed the
+/// pairs without going through the store (spec REQ-INT-9). The sealer comes from the
+/// broker, which owns the key.
 /// </remarks>
 public sealed class AliasStore
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<(AliasKind, string), HashSet<string>> _idsByName = [];
     private readonly Dictionary<(AliasKind, string), HashSet<string>> _namesById = [];
+    private readonly Func<byte[], byte[]>? _sealer;
+    private byte[] _seal = [];
+
+    public AliasStore()
+        : this(null)
+    {
+    }
+
+    public AliasStore(Func<byte[], byte[]>? sealer)
+    {
+        _sealer = sealer;
+        Reseal();
+    }
 
     /// <summary>
     /// Adds a pair and reports whether it was new.
@@ -38,8 +59,31 @@ public sealed class AliasStore
     {
         lock (_lock)
         {
-            Get(_idsByName, (pair.Kind, Normalize(pair.Name)), StringComparer.Ordinal).Add(pair.Id);
-            return Get(_namesById, (pair.Kind, pair.Id), StringComparer.OrdinalIgnoreCase).Add(pair.Name);
+            var changed = AddUnlocked(pair);
+            if (changed) Reseal();
+            return changed;
+        }
+    }
+
+    /// <summary>
+    /// True when the pairs still match their seal, or when the store has no sealer.
+    /// </summary>
+    public bool IsIntact()
+    {
+        lock (_lock) return _sealer is null || CryptographicOperations.FixedTimeEquals(_seal, _sealer(Canonical()));
+    }
+
+    /// <summary>
+    /// Replaces every pair, such as with the pairs reloaded from disk after a failed seal.
+    /// </summary>
+    public void Reset(IEnumerable<AliasPair> pairs)
+    {
+        lock (_lock)
+        {
+            _idsByName.Clear();
+            _namesById.Clear();
+            foreach (var pair in pairs) AddUnlocked(pair);
+            Reseal();
         }
     }
 
@@ -94,6 +138,41 @@ public sealed class AliasStore
     public static bool LooksLikeId(string value) => value.Length == 26 && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c));
 
     private static string Normalize(string name) => name.ToUpperInvariant();
+
+    private bool AddUnlocked(AliasPair pair)
+    {
+        var newId = Get(_idsByName, (pair.Kind, Normalize(pair.Name)), StringComparer.Ordinal).Add(pair.Id);
+        var newName = Get(_namesById, (pair.Kind, pair.Id), StringComparer.OrdinalIgnoreCase).Add(pair.Name);
+        return newId | newName;
+    }
+
+    private void Reseal()
+    {
+        if (_sealer is not null) _seal = _sealer(Canonical());
+    }
+
+    /// <summary>
+    /// Both indexes as sorted lines, so the same pairs always seal the same way. Both are
+    /// sealed because matching reads both: removing one ID from a name's set could turn a
+    /// possible match into a definite one.
+    /// </summary>
+    // ceiling: rebuilt on every check and change; fine for thousands of pairs.
+    private byte[] Canonical()
+    {
+        var lines = new List<string>();
+        foreach (var ((kind, id), names) in _namesById)
+        {
+            foreach (var name in names) lines.Add($"N\t{kind}\t{id}\t{name}");
+        }
+
+        foreach (var ((kind, name), ids) in _idsByName)
+        {
+            foreach (var id in ids) lines.Add($"I\t{kind}\t{name}\t{id}");
+        }
+
+        lines.Sort(StringComparer.Ordinal);
+        return Encoding.UTF8.GetBytes(string.Join('\n', lines));
+    }
 
     private static HashSet<string> Get(Dictionary<(AliasKind, string), HashSet<string>> map, (AliasKind, string) key, StringComparer comparer)
     {

@@ -26,24 +26,30 @@ public sealed class BrokerHost : IAsyncDisposable
 {
     private readonly AgentChannel _agent;
     private readonly ShimPipeServer _shims;
+    private readonly AuditLog _audit;
 
     private BrokerHost(BrokerHostOptions options)
     {
         var data = options.DataDirectory;
-        var audit = new AuditLog(Path.Combine(data, "audit.jsonl"));
+
+        // The vault comes first because the audit log's chain needs its key; any problem
+        // either finds is raised once the alarm exists, which in turn needs the audit log.
+        var (vault, vaultProblem) = OpenVault(Path.Combine(data, "integrity.vault"));
+        _audit = AuditLog.Open(Path.Combine(data, "audit.jsonl"), vault, out var auditProblem);
 
         BrokerService? broker = null;
         _agent = new AgentChannel(options.AgentPipeName, options.ConnectionFailed, () => broker?.WorkstationLocked());
-        var alarm = new IntegrityAlarm(audit, _agent.Send);
+        var alarm = new IntegrityAlarm(_audit, _agent.Send);
+        if (vaultProblem is not null) alarm.Raise(vaultProblem);
+        if (auditProblem is not null) alarm.Raise(auditProblem);
 
-        var vault = OpenVault(Path.Combine(data, "integrity.vault"), alarm);
         Rules = RuleStore.Open(Path.Combine(data, "rules.json"), vault, alarm.Raise);
         var aliasFile = new AliasFile(Path.Combine(data, "aliases.json"), vault, alarm.Raise);
         Aliases = aliasFile.Load();
         Cache = new SecretCache(alarm.Raise);
 
         var prompts = new PromptQueue(10, options.PromptTimeout, _agent.Send);
-        broker = new BrokerService(new BrokerSettings(options.OpPath), Rules, Aliases, aliasFile, audit, prompts, Cache, _agent.Send, options.ResolveCaller);
+        broker = new BrokerService(new BrokerSettings(options.OpPath), Rules, Aliases, aliasFile, _audit, prompts, Cache, alarm, _agent.Send, options.ResolveCaller);
         _shims = new ShimPipeServer(options.ShimPipeName, broker.DecideAsync, (request, capture, _) => broker.CaptureReceivedAsync(request, capture), options.ConnectionFailed);
 
         _agent.Start(prompts);
@@ -63,6 +69,7 @@ public sealed class BrokerHost : IAsyncDisposable
         await _shims.DisposeAsync().ConfigureAwait(false);
         await _agent.DisposeAsync().ConfigureAwait(false);
         Cache.Dispose();
+        _audit.Dispose();
     }
 
     /// <summary>
@@ -70,17 +77,16 @@ public sealed class BrokerHost : IAsyncDisposable
     /// old key then fails its own check and is quarantined in turn, so a destroyed vault
     /// costs the stored rules, never their integrity.
     /// </summary>
-    private static IntegrityVault OpenVault(string path, IntegrityAlarm alarm)
+    private static (IntegrityVault Vault, string? Problem) OpenVault(string path)
     {
         try
         {
-            return IntegrityVault.Open(path);
+            return (IntegrityVault.Open(path), null);
         }
         catch (TamperedException e)
         {
             var quarantined = RuleStore.Quarantine(path);
-            alarm.Raise($"{e.Message} It was moved to {quarantined}, and a new vault was created; files sealed with the old one will be quarantined as they load.");
-            return IntegrityVault.Open(path);
+            return (IntegrityVault.Open(path), $"{e.Message} It was moved to {quarantined}, and a new vault was created; files sealed with the old one will be quarantined as they load.");
         }
     }
 }

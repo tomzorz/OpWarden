@@ -149,18 +149,28 @@ public sealed class BrokerTests
     }
 
     [Fact]
-    public async Task An_allowed_item_read_teaches_the_broker_its_aliases()
+    public async Task An_allowed_item_read_teaches_the_broker_aliases_that_survive_a_restart()
     {
         const string itemId = "q1w2e3r4t5y6u7i8o9p0a1s2d3";
-        await using var broker = BrokerHarness.Start(Claude, [new Rule(Claude, OpAction.Read, null, null, null, Verdict.Allow)]);
-        var itemJson = $$"""{"id":"{{itemId}}","title":"GitHub"}""";
+        var data = Directory.CreateTempSubdirectory("opwarden-aliases-");
+        try
+        {
+            var itemJson = $$"""{"id":"{{itemId}}","title":"GitHub"}""";
+            await using (var first = BrokerHarness.StartIn(data, Claude))
+            {
+                first.Rules.Add([new Rule(Claude, OpAction.Read, null, null, null, Verdict.Allow)]);
+                var run = await first.RunShimAsync(["item", "get", "GitHub", "--format", "json"], new Dictionary<string, string> { ["PROBE_STDOUT"] = itemJson });
+                Assert.Equal(itemJson, run.Stdout);
+                await WaitUntilAsync(() => first.Aliases.NamesFor(AliasKind.Item, itemId).Count == 1);
+            }
 
-        var run = await broker.RunShimAsync(["item", "get", "GitHub", "--format", "json"], new Dictionary<string, string> { ["PROBE_STDOUT"] = itemJson });
-
-        Assert.Equal(itemJson, run.Stdout);
-        await WaitUntilAsync(() => broker.Aliases.NamesFor(AliasKind.Item, itemId).Count == 1);
-        var vault = Broker.Integrity.IntegrityVault.Open(Path.Combine(broker.DataDirectory, "integrity.vault"));
-        Assert.Equal(["GitHub"], new Broker.Storage.AliasFile(Path.Combine(broker.DataDirectory, "aliases.json"), vault, _ => { }).Load().NamesFor(AliasKind.Item, itemId));
+            await using var second = BrokerHarness.StartIn(data, Claude);
+            Assert.Equal(["GitHub"], second.Aliases.NamesFor(AliasKind.Item, itemId));
+        }
+        finally
+        {
+            data.Delete(recursive: true);
+        }
     }
 
     [Fact]
