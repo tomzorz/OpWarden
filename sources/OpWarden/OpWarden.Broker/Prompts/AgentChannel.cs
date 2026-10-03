@@ -10,8 +10,10 @@ namespace OpWarden.Broker.Prompts;
 /// </summary>
 /// <remarks>
 /// Outgoing messages go through one ordered channel, so a <see cref="ClosePrompt"/> never
-/// overtakes the <see cref="ShowPrompt"/> it closes. Messages sent while no session agent
-/// is connected are dropped; a session agent that connects is sent the prompt on screen.
+/// overtakes the <see cref="ShowPrompt"/> it closes. Prompt messages sent while no session
+/// agent is connected are dropped, and a session agent that connects is sent the prompt
+/// on screen. Notices are kept until a session agent connects, so a warning raised at
+/// start, before any session agent exists, still reaches the user (REQ-INT-8).
 /// Pinning the session agent to the process the broker started (REQ-TRUST-4) arrives
 /// with trust hardening.
 /// </remarks>
@@ -21,12 +23,18 @@ public sealed class AgentChannel : IAsyncDisposable
     private readonly Action<Exception> _connectionFailed;
     private readonly Channel<AgentMessage> _outgoing = Channel.CreateUnbounded<AgentMessage>(new UnboundedChannelOptions { SingleReader = true });
     private readonly CancellationTokenSource _stopping = new();
+    private const int MaxHeldNotices = 20;
+
+    private readonly Queue<ShowNotice> _heldNotices = new();
+    private readonly Lock _noticeLock = new();
+    private readonly Action _workstationLocked;
     private PromptQueue? _prompts;
     private NamedPipeServerStream? _connected;
     private Task? _acceptLoop;
     private Task? _sendLoop;
 
-    public AgentChannel(string pipeName, Action<Exception> connectionFailed) => (_pipeName, _connectionFailed) = (pipeName, connectionFailed);
+    public AgentChannel(string pipeName, Action<Exception> connectionFailed, Action workstationLocked) =>
+        (_pipeName, _connectionFailed, _workstationLocked) = (pipeName, connectionFailed, workstationLocked);
 
     /// <summary>
     /// Queues a message for the connected session agent.
@@ -63,6 +71,10 @@ public sealed class AgentChannel : IAsyncDisposable
                 await listener.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
                 Volatile.Write(ref _connected, listener);
                 if (_prompts!.CurrentPrompt() is { } showing) Send(showing);
+                lock (_noticeLock)
+                {
+                    while (_heldNotices.TryDequeue(out var notice)) Send(notice);
+                }
 
                 await ReceiveAsync(listener, cancellationToken).ConfigureAwait(false);
 
@@ -87,13 +99,23 @@ public sealed class AgentChannel : IAsyncDisposable
         {
             while (await AgentProtocol.ReadAsync(pipe, cancellationToken).ConfigureAwait(false) is { } message)
             {
-                // A session agent sends decisions; anything else from it is ignored.
+                // A session agent sends decisions and lock events; anything else is ignored.
                 if (message is DecisionMade decision) _prompts!.Decide(decision);
+                else if (message is WorkstationLocked) _workstationLocked();
             }
         }
         catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException)
         {
             _connectionFailed(e);
+        }
+    }
+
+    private void Hold(ShowNotice notice)
+    {
+        lock (_noticeLock)
+        {
+            if (_heldNotices.Count == MaxHeldNotices) _heldNotices.Dequeue();
+            _heldNotices.Enqueue(notice);
         }
     }
 
@@ -103,7 +125,12 @@ public sealed class AgentChannel : IAsyncDisposable
         {
             await foreach (var message in _outgoing.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                if (Volatile.Read(ref _connected) is not { IsConnected: true } pipe) continue;
+                if (Volatile.Read(ref _connected) is not { IsConnected: true } pipe)
+                {
+                    if (message is ShowNotice notice) Hold(notice);
+                    continue;
+                }
+
                 try
                 {
                     await AgentProtocol.WriteAsync(pipe, message, cancellationToken).ConfigureAwait(false);

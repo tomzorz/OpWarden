@@ -25,13 +25,14 @@ public sealed record RuleScope(bool Caller, bool Action, bool Vault, bool Item, 
 
 /// <summary>
 /// A message between the broker and the session agent. The broker sends prompts,
-/// closes them and sends notices; the session agent sends decisions.
+/// closes them and sends notices; the session agent sends decisions and lock events.
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(ShowPrompt), "show-prompt")]
 [JsonDerivedType(typeof(ClosePrompt), "close-prompt")]
 [JsonDerivedType(typeof(ShowNotice), "show-notice")]
 [JsonDerivedType(typeof(DecisionMade), "decision")]
+[JsonDerivedType(typeof(WorkstationLocked), "workstation-locked")]
 public abstract record AgentMessage;
 
 /// <summary>
@@ -67,3 +68,8 @@ public sealed record ShowNotice(string Title, string Text) : AgentMessage;
 /// offered it.
 /// </summary>
 public sealed record DecisionMade(Guid PromptId, PromptDecision Decision, RuleScope? Scope, CacheTtl? CacheGrant) : AgentMessage;
+
+/// <summary>
+/// The interactive user locked the workstation; the broker flushes the cache (REQ-CACHE-7).
+/// </summary>
+public sealed record WorkstationLocked : AgentMessage;

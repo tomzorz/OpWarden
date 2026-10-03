@@ -7,19 +7,19 @@ namespace OpWarden.SessionAgent;
 /// <summary>
 /// The session agent's end of the broker pipe: connects, reconnects whenever the broker
 /// goes away, hands each incoming message to <paramref name="received"/>, and sends
-/// decisions in order. Holds no state of its own (spec glossary: session agent).
+/// decisions and lock events in order. Holds no state of its own (spec glossary: session agent).
 /// </summary>
 internal sealed class AgentConnection(string pipeName, Action<AgentMessage> received, Action<bool> connectedChanged)
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
 
-    private readonly Channel<DecisionMade> _outgoing = Channel.CreateUnbounded<DecisionMade>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<AgentMessage> _outgoing = Channel.CreateUnbounded<AgentMessage>(new UnboundedChannelOptions { SingleReader = true });
 
     /// <summary>
-    /// Queues a decision for the broker. A decision made while disconnected is lost; the
+    /// Queues a message for the broker. A decision made while disconnected is lost; the
     /// broker times the prompt out into a deny, which is the safe failure.
     /// </summary>
-    public void Send(DecisionMade decision) => _outgoing.Writer.TryWrite(decision);
+    public void Send(AgentMessage message) => _outgoing.Writer.TryWrite(message);
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -57,9 +57,9 @@ internal sealed class AgentConnection(string pipeName, Action<AgentMessage> rece
     {
         try
         {
-            await foreach (var decision in _outgoing.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            await foreach (var message in _outgoing.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                await AgentProtocol.WriteAsync(pipe, decision, cancellationToken).ConfigureAwait(false);
+                await AgentProtocol.WriteAsync(pipe, message, cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -68,7 +68,7 @@ internal sealed class AgentConnection(string pipeName, Action<AgentMessage> rece
         }
         catch (IOException e)
         {
-            AgentLog.Write($"could not send a decision: {e.Message}");
+            AgentLog.Write($"could not send to the broker: {e.Message}");
         }
     }
 }

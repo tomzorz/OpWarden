@@ -11,6 +11,7 @@ namespace OpWarden.Core.CommandLine;
 /// <param name="ReferencesUnknown">True when the arguments could not establish which references the invocation uses.</param>
 /// <param name="EnvFiles">The <c>op run --env-file</c> values, in order.</param>
 /// <param name="TemplateFile">The <c>op inject --in-file</c> value.</param>
+/// <param name="OutputFile">The <c>--out-file</c> value: the op CLI then writes its output there, not to standard output.</param>
 public sealed record ParsedInvocation(
     string? Command,
     OpAction Action,
@@ -18,7 +19,8 @@ public sealed record ParsedInvocation(
     IReadOnlyList<SecretPath> ArgumentReferences,
     bool ReferencesUnknown,
     IReadOnlyList<string> EnvFiles,
-    string? TemplateFile)
+    string? TemplateFile,
+    string? OutputFile = null)
 {
     /// <summary>
     /// True for <c>op read</c>, the only invocation whose output REQ-CACHE-10 lets the broker cache.

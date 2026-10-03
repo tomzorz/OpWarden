@@ -2,8 +2,7 @@ using System.IO.Pipes;
 using System.Text.Json;
 using System.Threading.Channels;
 using OpWarden.Broker;
-using OpWarden.Broker.Audit;
-using OpWarden.Broker.Prompts;
+using OpWarden.Broker.Cache;
 using OpWarden.Broker.Storage;
 using OpWarden.Core.Agent;
 using OpWarden.Core.Rules;
@@ -11,41 +10,33 @@ using OpWarden.Core.Rules;
 namespace OpWarden.Tests;
 
 /// <summary>
-/// The whole broker on pipes and files of its own: shim server, session-agent channel,
-/// prompt queue, rule store, alias file and audit log, wired as the console host wires
-/// them. Only the caller resolver is the test's, until the process map exists.
+/// The whole broker on pipes and files of its own, assembled by <see cref="BrokerHost"/>
+/// exactly as the console host assembles it. Only the caller resolver is the test's,
+/// until the process map exists.
 /// </summary>
 internal sealed class BrokerHarness : IAsyncDisposable
 {
-    private readonly DirectoryInfo _data = Directory.CreateTempSubdirectory("opwarden-broker-");
-    private readonly AgentChannel _agent;
-    private readonly ShimPipeServer _shims;
+    private readonly DirectoryInfo _data;
+    private readonly bool _ownsData;
+    private readonly BrokerHost _host;
 
-    private BrokerHarness(TimeSpan promptTimeout, CallerIdentity caller, IEnumerable<Rule> rules)
+    private BrokerHarness(DirectoryInfo data, bool ownsData, TimeSpan promptTimeout, CallerIdentity caller, IEnumerable<Rule> rules)
     {
-        Rules = RuleStore.Open(Path.Combine(_data.FullName, "rules.json"));
-        Rules.Add(rules);
-        AliasFile = new AliasFile(Path.Combine(_data.FullName, "aliases.json"));
-        Aliases = AliasFile.Load();
-        var audit = new AuditLog(AuditPath);
-
-        _agent = new AgentChannel(AgentPipeName, ConnectionErrors.Add);
-        var prompts = new PromptQueue(10, promptTimeout, _agent.Send);
-        var broker = new BrokerService(new BrokerSettings(BuiltExecutables.Probe), Rules, Aliases, AliasFile, audit, prompts, _agent.Send, _ => caller);
-        _shims = new ShimPipeServer(ShimPipeName, broker.DecideAsync, (request, capture, _) => broker.CaptureReceivedAsync(request, capture), ConnectionErrors.Add);
-        _agent.Start(prompts);
-        _shims.Start();
+        (_data, _ownsData) = (data, ownsData);
+        _host = BrokerHost.Start(new BrokerHostOptions(BuiltExecutables.Probe, data.FullName, ShimPipeName, AgentPipeName, promptTimeout, _ => caller, ConnectionErrors.Add));
+        var seed = rules.ToList();
+        if (seed.Count > 0) Rules.Add(seed);
     }
 
     public string ShimPipeName { get; } = $"OpWarden-test-{Guid.NewGuid():N}";
 
     public string AgentPipeName { get; } = $"OpWarden-test-agent-{Guid.NewGuid():N}";
 
-    public RuleStore Rules { get; }
+    public RuleStore Rules => _host.Rules;
 
-    public AliasStore Aliases { get; }
+    public AliasStore Aliases => _host.Aliases;
 
-    public AliasFile AliasFile { get; }
+    public SecretCache Cache => _host.Cache;
 
     public List<Exception> ConnectionErrors { get; } = [];
 
@@ -54,7 +45,12 @@ internal sealed class BrokerHarness : IAsyncDisposable
     private string AuditPath => Path.Combine(_data.FullName, "audit.jsonl");
 
     public static BrokerHarness Start(CallerIdentity caller, IEnumerable<Rule>? rules = null, TimeSpan? promptTimeout = null) =>
-        new(promptTimeout ?? TimeSpan.FromSeconds(20), caller, rules ?? []);
+        new(Directory.CreateTempSubdirectory("opwarden-broker-"), true, promptTimeout ?? TimeSpan.FromSeconds(20), caller, rules ?? []);
+
+    /// <summary>
+    /// Starts a broker on a data directory the test owns, to restart over the same files.
+    /// </summary>
+    public static BrokerHarness StartIn(DirectoryInfo data, CallerIdentity caller) => new(data, false, TimeSpan.FromSeconds(20), caller, []);
 
     public Task<ShimRun> RunShimAsync(IEnumerable<string> args, IReadOnlyDictionary<string, string>? environment = null) =>
         ShimHarness.RunShimAsync(ShimPipeName, args, environment);
@@ -86,9 +82,8 @@ internal sealed class BrokerHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _shims.DisposeAsync();
-        await _agent.DisposeAsync();
-        _data.Delete(recursive: true);
+        await _host.DisposeAsync();
+        if (_ownsData) _data.Delete(recursive: true);
     }
 }
 
@@ -135,7 +130,9 @@ internal sealed class TestAgent : IAsyncDisposable
     public bool TryPeek(out AgentMessage? message) => _received.Reader.TryPeek(out message);
 
     public Task DecideAsync(ShowPrompt prompt, PromptDecision decision, RuleScope? scope = null, CacheTtl? grant = null) =>
-        AgentProtocol.WriteAsync(_pipe, new DecisionMade(prompt.PromptId, decision, scope, grant), CancellationToken.None);
+        SendAsync(new DecisionMade(prompt.PromptId, decision, scope, grant));
+
+    public Task SendAsync(AgentMessage message) => AgentProtocol.WriteAsync(_pipe, message, CancellationToken.None);
 
     public async ValueTask DisposeAsync()
     {

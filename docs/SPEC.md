@@ -378,6 +378,26 @@ REQ-TRUST-6: A prompt decision MUST NOT require elevation.
 
 REQ-TRUST-7: The broker MUST record each rule change in the audit log, with the source stated as exactly one of `prompt` or `management`.
 
+### 8.1 Integrity
+
+**Integrity decision (2026-10-03):** the broker seals the state it decides with, on disk and in memory, so a change that did not come from the broker is detected. Tamás asked for this as a step beyond a human-readable file edit or a memory editor such as Cheat Engine. Under the service account the seal key is out of the interactive user's reach, and the seal adds to the file permissions of REQ-TRUST-2. In the console broker the key belongs to the user who started it, so the seal stops casual edits only. A decompiled broker defeats it in either mode.
+
+REQ-INT-1: The broker MUST seal the rule store and the alias file. A seal is an HMAC-SHA256, under the integrity key, over the file's name, the file's generation number, and the file's content bytes. The broker MUST raise the generation number at each write.
+
+REQ-INT-2: The broker MUST keep the integrity key, and the latest generation number of each sealed file, in one vault file. The broker MUST encrypt the vault file with DPAPI for the account the broker runs as.
+
+REQ-INT-3: When a sealed file fails its seal, when it carries a generation number older than the vault records, or when it is missing although the vault records a generation for it, the broker MUST treat the file as tampered. For a tampered file, the broker MUST move the file aside under a new name, MUST record an `integrity-failure` entry in the audit log, and MUST notify the session agent. For a tampered rule store, the broker MUST then start with no rules. The reason is that a forged `allow` rule must never take effect, and with no rules each invocation shows a prompt.
+
+REQ-INT-4: A sealed file one generation ahead of the vault MUST pass. The reason is that a broker that stops between writing the file and writing the vault leaves exactly that state.
+
+REQ-INT-5: When the broker cannot decrypt the vault, the broker MUST move the vault aside, MUST create a new vault, and MUST report the failure as REQ-INT-3 states. Each file sealed under the old key then fails its seal, and REQ-INT-3 applies to it.
+
+REQ-INT-6: The broker MUST seal the rule set it holds in memory, under a key that the broker generates at start and never writes anywhere. Before each use of the rule set, the broker MUST verify that seal. When the seal fails, the broker MUST report the failure as REQ-INT-3 states, and MUST reload the rule store from disk.
+
+REQ-INT-7: The broker MUST seal each cache entry over its cache key, its expiry, and its value, under the in-memory key of REQ-INT-6, and MUST verify the seal before the broker serves the entry. When the seal fails, the broker MUST delete the entry, MUST report the failure as REQ-INT-3 states, and MUST run the op CLI instead of serving the entry.
+
+REQ-INT-8: When the broker raises a notice while no session agent is connected, the broker MUST hold the notice, and MUST deliver it when a session agent connects. The reason is that the broker checks its files at start, before a session agent exists.
+
 ## 9. Requirements: cache
 
 REQ-CACHE-1: The broker MUST hold the cache in process memory only, and MUST NOT write a cached value to disk.
@@ -399,6 +419,16 @@ REQ-CACHE-8: The management window MUST offer a control that deletes every cache
 REQ-CACHE-9: The broker MUST record each cache hit in the audit log with the reason `cache`.
 
 REQ-CACHE-10: The broker MUST store output in the cache only when the invocation is `op read`. The broker MUST NOT cache the output of any other `read`-classified invocation.
+
+REQ-CACHE-11: The broker MUST NOT cache the output of an `op read` invocation that names `--out-file`, and MUST NOT cache the output of an invocation that exits with a non-zero code. The reason is that `--out-file` sends the value to a file, which a cached answer on standard output cannot reproduce.
+
+REQ-CACHE-12: The broker MUST serve a cache entry only when a rule returns `allow` for the invocation, or when the invocation needs a prompt that offers all four decisions. The reason is that a `deny` rule, an `unknown` caller, and a `prompt-always` vault each outrank a cached value.
+
+REQ-CACHE-13: A cache key MUST hold the caller identity and the exact argument list of the invocation. The reason is that a flag such as `--no-newline` changes the output.
+
+REQ-CACHE-14: The broker MUST encrypt each cached value in memory with `CryptProtectMemory`, and MUST decrypt only a copy when the broker serves the entry. The reason is that a scan of broker memory then finds no secret value.
+
+REQ-CACHE-15: The broker MUST record each cache flush in the audit log as a `cache-flush` entry.
 
 **Cacheable surface decision (2026-08-17):** the cacheable surface is the output of `op read` invocations only, stated as REQ-CACHE-10. The argv spike traced the OpenTofu homelab workflow and found that every op CLI invocation it issues is `op read` with a secret reference, and that no other `read` subcommand appears at all. The narrow surface therefore covers the whole motivating workflow, and a narrow surface is preferred when both candidates would work. Findings: recorded in the project spike notes, which are kept outside this repository because they carry machine-specific and vault-specific detail.
 
@@ -492,7 +522,8 @@ Rollback:
 - PATH bypass: a caller that runs the op CLI by its full path bypasses the shim. The bypass watcher records the start and notifies the session agent; nothing blocks the invocation. The procedure in section 13 closes the cold-session case at the biometric prompt.
 - Elevated attacker: a process with an elevated Administrators token can stop the broker, edit the rule store, and read broker memory. OpWarden's privilege separation targets non-elevated same-user processes, which is what agents are.
 - Session-agent replacement: the pinning in REQ-TRUST-3 and REQ-TRUST-4 raises the bar against decision forgery. A same-user process that kills the session agent and races the broker's restart is detectable through the audit log, not preventable.
-- Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file.
+- Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file, but REQ-CACHE-14 means only ciphertext reaches it.
+- Integrity in the console broker: the console broker runs as the interactive user, so the integrity key of REQ-INT-2 and the in-memory key of REQ-INT-6 are within that user's reach. A process that decrypts the vault, or reads the in-memory key from broker memory, can forge a seal. Section 8.1 targets file edits and memory edits, and the service account is what puts the keys out of reach.
 - Dropped process-creation events: a dropped event leaves one caller unresolvable for as long as that caller runs, and REQ-CALL-18 then classifies it as `unknown`. The failure is a prompt the interactive user cannot clear, and the failure is not a wrong verdict. The reliability spike measured no drop at 402 process starts per second, which is roughly two orders of magnitude above a normal machine. REQ-CALL-3 keeps the consumer cheap, because a slow consumer is the documented cause of drops.
 - Ancestry that predates the broker: REQ-CALL-5 seeds the map from a snapshot, and a snapshot cannot recover a parent that exited before the snapshot. A process whose recorded parent already exited at broker start therefore resolves no further than itself. The gap closes as processes cycle, and the gap reopens at every broker restart.
 - Built-in field list: REQ-RULE-29 exempts built-in fields from notices, and the implementation recognises `password` and `username` as built-in. A built-in field outside that list gets a notice that it does not need.

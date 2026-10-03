@@ -94,6 +94,7 @@ public static class OpArgvParser
         string? Last(string name) => NonEmpty(flags.LastOrDefault(f => f.Name == name).Value);
         IEnumerable<string> All(string name) => flags.Where(f => f.Name == name && f.Value is not null).Select(f => f.Value!);
 
+        invocation = invocation with { OutputFile = Last("out-file") };
         return spec.Name switch
         {
             "read" => ReadInvocation(invocation, positionals),

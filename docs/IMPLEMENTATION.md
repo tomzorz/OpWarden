@@ -41,7 +41,8 @@ Section 3 and section 14 step 1 make all three executables NativeAOT, and that s
 - **Process-creation events:** ETW `Microsoft-Windows-Kernel-Process`. The spikes drove it through `logman` and `wevtutil`; the broker needs a real consumer. `Microsoft.Diagnostics.Tracing.TraceEvent` is the comfortable route and is a dependency (sign-off needed); WMI `Win32_ProcessStartTrace` needs no package but its delivery was not measured.
 - **Authenticode** (REQ-CALL-14): `WinVerifyTrust` with revocation checks configured never to touch the network, plus `CryptQueryObject` to read the signer name. Cache verdicts keyed by path, size and modification time.
 - **Elevation check** (REQ-TRUST-5): `ImpersonateNamedPipeClient`, open the thread token, `GetTokenInformation(TokenElevation)`, revert. Only rule mutations need this; prompt decisions must not (REQ-TRUST-6).
-- **Cache memory** (REQ-CACHE-1/2): values in `NativeMemory.Alloc` buffers, `VirtualLock`ed, zeroed on delete. Managed arrays move under the GC and can be paged before a lock call ever sees them.
+- **Cache memory** (REQ-CACHE-1/2, REQ-CACHE-14): values in `NativeMemory.Alloc` buffers, `VirtualLock`ed, encrypted in place with `CryptProtectMemory`, zeroed on delete. Managed arrays move under the GC and can be paged before a lock call ever sees them.
+- **Integrity vault** (REQ-INT-2): `CryptProtectData` / `CryptUnprotectData` through P/Invoke, which avoids the `ProtectedData` package. Under the service account the vault decrypts only for `NT SERVICE\OpWarden`.
 - **Service registration:** `sc.exe create OpWarden binPath= ... obj= "NT SERVICE\OpWarden" start= auto`. The virtual account exists implicitly; grant it the data-directory ACLs from REQ-TRUST-2 at install time.
 
 ## Known hard spot: starting the session agent from the service

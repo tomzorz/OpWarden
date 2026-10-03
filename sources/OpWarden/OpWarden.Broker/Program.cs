@@ -1,9 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpWarden.Broker;
-using OpWarden.Broker.Audit;
-using OpWarden.Broker.Prompts;
-using OpWarden.Broker.Storage;
 using OpWarden.Core.Agent;
 using OpWarden.Core.Pipe;
 using OpWarden.Core.Rules;
@@ -42,24 +39,20 @@ if (!Path.IsPathFullyQualified(config.OpPath) || !File.Exists(config.OpPath))
 }
 
 var data = Path.GetFullPath(config.DataDirectory, Path.GetDirectoryName(Path.GetFullPath(configPath))!);
-var audit = new AuditLog(Path.Combine(data, "audit.jsonl"));
-var rules = RuleStore.Open(Path.Combine(data, "rules.json"));
-var aliasFile = new AliasFile(Path.Combine(data, "aliases.json"));
-var aliases = aliasFile.Load();
 
 void Log(Exception e) => Console.Error.WriteLine($"{DateTimeOffset.Now:HH:mm:ss} connection error: {e.Message}");
-
-await using var agent = new AgentChannel(AgentProtocol.DefaultPipeName, Log);
-var prompts = new PromptQueue(capacity: 10, timeout: TimeSpan.FromSeconds(30), agent.Send);
 
 // Caller resolution arrives with the process map (build-order step 6). Until then every
 // caller is unknown, which REQ-CALL-19 turns into a once-only prompt each time: the
 // safe placeholder, never a guess.
-var broker = new BrokerService(new BrokerSettings(config.OpPath), rules, aliases, aliasFile, audit, prompts, agent.Send, _ => CallerIdentity.Unknown);
-
-await using var shims = new ShimPipeServer(PipeProtocol.DefaultPipeName, broker.DecideAsync, (request, capture, _) => broker.CaptureReceivedAsync(request, capture), Log);
-agent.Start(prompts);
-shims.Start();
+await using var broker = BrokerHost.Start(new BrokerHostOptions(
+    config.OpPath,
+    data,
+    PipeProtocol.DefaultPipeName,
+    AgentProtocol.DefaultPipeName,
+    TimeSpan.FromSeconds(30),
+    _ => CallerIdentity.Unknown,
+    Log));
 
 Console.WriteLine($"OpWarden broker listening on \\\\.\\pipe\\{PipeProtocol.DefaultPipeName} (shims) and \\\\.\\pipe\\{AgentProtocol.DefaultPipeName} (session agent).");
 Console.WriteLine($"Data in {data}. Ctrl+C stops.");

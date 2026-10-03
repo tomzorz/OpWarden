@@ -30,7 +30,8 @@ public enum RuleChangeSource
 /// <summary>
 /// One line of the audit log (REQ-AUD-2). Absent fields are left out of the line.
 /// </summary>
-/// <param name="Event">What happened: <c>invocation</c> or <c>rule-change</c>.</param>
+/// <param name="Event">What happened: <c>invocation</c>, <c>rule-change</c>, <c>cache-flush</c> or <c>integrity-failure</c>.</param>
+/// <param name="Detail">A sentence for events that need one, such as what failed its integrity check.</param>
 /// <param name="CallerChain">The resolved ancestor chain (REQ-CALL-17).</param>
 /// <param name="Arguments">The invocation arguments, redacted per REQ-AUD-5.</param>
 public sealed record AuditEntry(
@@ -47,7 +48,8 @@ public sealed record AuditEntry(
     Verdict? Verdict = null,
     VerdictReason? Reason = null,
     RuleChangeSource? Source = null,
-    Rule? Rule = null);
+    Rule? Rule = null,
+    string? Detail = null);
 
 /// <summary>
 /// The append-only audit log: one JSON object per line, UTC timestamps (spec section 12).

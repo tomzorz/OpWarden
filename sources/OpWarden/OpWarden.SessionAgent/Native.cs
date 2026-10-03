@@ -21,6 +21,8 @@ internal static unsafe partial class Native
     public const uint NIM_ADD = 0, NIM_MODIFY = 1, NIM_DELETE = 2, NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4, NIF_INFO = 0x10, NIIF_INFO = 1;
     public const uint MF_STRING = 0, TPM_RIGHTBUTTON = 2, TPM_RETURNCMD = 0x100;
     public const int TRANSPARENT = 1;
+    public const uint WM_WTSSESSION_CHANGE = 0x02B1, NOTIFY_FOR_THIS_SESSION = 0;
+    public const nint WTS_SESSION_LOCK = 0x7;
     public static readonly nint HWND_TOPMOST = -1, HWND_MESSAGE = -3, IDI_SHIELD = 32518, IDC_ARROW = 32512;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -141,6 +143,8 @@ internal static unsafe partial class Native
     [LibraryImport("gdi32.dll")] public static partial uint SetTextColor(nint hdc, uint color);
     [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)] public static partial nint GetModuleHandleW(string? name);
     [LibraryImport("shell32.dll")][return: MarshalAs(UnmanagedType.Bool)] public static partial bool Shell_NotifyIconW(uint message, NOTIFYICONDATAW* data);
+    [LibraryImport("wtsapi32.dll")][return: MarshalAs(UnmanagedType.Bool)] public static partial bool WTSRegisterSessionNotification(nint hwnd, uint flags);
+    [LibraryImport("wtsapi32.dll")][return: MarshalAs(UnmanagedType.Bool)] public static partial bool WTSUnRegisterSessionNotification(nint hwnd);
 
     public static void CopyTo(string text, char* destination, int capacity)
     {

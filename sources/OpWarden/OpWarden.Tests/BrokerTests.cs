@@ -159,7 +159,8 @@ public sealed class BrokerTests
 
         Assert.Equal(itemJson, run.Stdout);
         await WaitUntilAsync(() => broker.Aliases.NamesFor(AliasKind.Item, itemId).Count == 1);
-        Assert.Equal(["GitHub"], new Broker.Storage.AliasFile(Path.Combine(broker.DataDirectory, "aliases.json")).Load().NamesFor(AliasKind.Item, itemId));
+        var vault = Broker.Integrity.IntegrityVault.Open(Path.Combine(broker.DataDirectory, "integrity.vault"));
+        Assert.Equal(["GitHub"], new Broker.Storage.AliasFile(Path.Combine(broker.DataDirectory, "aliases.json"), vault, _ => { }).Load().NamesFor(AliasKind.Item, itemId));
     }
 
     [Fact]

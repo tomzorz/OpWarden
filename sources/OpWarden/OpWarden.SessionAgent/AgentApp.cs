@@ -39,6 +39,9 @@ internal sealed unsafe class AgentApp : Window
         Create(HostClass, 0, "OpWarden session agent", 0, 0, 0, 0, 0);
         UpdateTray(NIM_ADD);
 
+        // REQ-CACHE-7: the broker flushes the cache when this session locks.
+        if (!WTSRegisterSessionNotification(Handle, NOTIFY_FOR_THIS_SESSION)) AgentLog.Write("could not subscribe to session lock events; the cache will not flush on lock");
+
         using var stopping = new CancellationTokenSource();
         var connection = Task.Run(() => _connection.RunAsync(stopping.Token));
 
@@ -70,10 +73,14 @@ internal sealed unsafe class AgentApp : Window
                 // A broker that went away took its prompt with it.
                 if (!_connected) DismissPrompt();
                 return 0;
+            case WM_WTSSESSION_CHANGE when wParam == WTS_SESSION_LOCK:
+                _connection.Send(new WorkstationLocked());
+                return 0;
             case WmTray when (uint)lParam is WM_RBUTTONUP or WM_CONTEXTMENU:
                 ShowTrayMenu();
                 return 0;
             case WM_DESTROY:
+                WTSUnRegisterSessionNotification(Handle);
                 UpdateTray(NIM_DELETE);
                 PostQuitMessage(0);
                 return 0;
