@@ -119,7 +119,7 @@ public sealed class RuleEngine(RuleSet rules, AliasStore aliases)
         FieldMatcher.Action(rule.Action, tuple.Action),
         FieldMatcher.Named(rule.Vault, tuple.Path.Vault, AliasKind.Vault, aliases),
         FieldMatcher.Named(rule.Item, tuple.Path.Item, AliasKind.Item, aliases),
-        FieldMatcher.Key(rule.Key, tuple.Path.Key));
+        FieldMatcher.Key(rule.Key, tuple.Path.Key, aliases));
 
     /// <summary>
     /// True when the tuple's vault is, or could be, a <c>prompt-always</c> vault. An

@@ -132,6 +132,47 @@ public sealed class RuleEngineTests
     }
 
     [Fact]
+    public void A_rule_pinning_a_name_covers_every_id_known_to_carry_it()
+    {
+        var aliases = new AliasStore();
+        aliases.Add(new AliasPair(AliasKind.Item, "GitHub", GitHubId1));
+        aliases.Add(new AliasPair(AliasKind.Item, "GitHub", GitHubId2));
+
+        Assert.Equal("allow", Outcome(Engine([Allow(item: "GitHub")], aliases).Evaluate(Claude, OpAction.Read, new("V", GitHubId2, "K"), [], false)));
+    }
+
+    private const string ApiKeyFieldId = "dddddddddddddddddddddddddd";
+
+    [Fact]
+    public void A_deny_on_a_field_label_covers_an_unseen_field_id()
+    {
+        Assert.Equal("deny", Outcome(Engine([Allow(), Deny(key: "API Key")]).Evaluate(Claude, OpAction.Read, new("V", "I", ApiKeyFieldId), [], false)));
+    }
+
+    [Fact]
+    public void An_allow_on_a_field_label_covers_the_field_id_once_the_pair_is_known()
+    {
+        var rules = new[] { Allow(key: "API Key") };
+        Assert.Equal("prompt", Outcome(Engine(rules).Evaluate(Claude, OpAction.Read, new("V", "I", ApiKeyFieldId), [], false)));
+
+        var aliases = new AliasStore();
+        aliases.Add(new AliasPair(AliasKind.Field, "API Key", ApiKeyFieldId));
+
+        Assert.Equal("allow", Outcome(Engine(rules, aliases).Evaluate(Claude, OpAction.Read, new("V", "I", ApiKeyFieldId), [], false)));
+    }
+
+    [Fact]
+    public void A_field_alias_under_another_section_is_only_possible()
+    {
+        var aliases = new AliasStore();
+        aliases.Add(new AliasPair(AliasKind.Field, "API Key", ApiKeyFieldId));
+
+        Assert.Equal("allow", Outcome(Engine([Allow(key: "Login/API Key")], aliases).Evaluate(Claude, OpAction.Read, new("V", "I", "Login/" + ApiKeyFieldId), [], false)));
+        Assert.Equal("prompt", Outcome(Engine([Allow(key: "Login/API Key")], aliases).Evaluate(Claude, OpAction.Read, new("V", "I", ApiKeyFieldId), [], false)));
+        Assert.Equal("deny", Outcome(Engine([Allow(), Deny(key: "Login/API Key")], aliases).Evaluate(Claude, OpAction.Read, new("V", "I", ApiKeyFieldId), [], false)));
+    }
+
+    [Fact]
     public void Vault_and_item_aliases_do_not_mix()
     {
         var aliases = new AliasStore();

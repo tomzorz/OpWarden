@@ -25,6 +25,14 @@ public sealed class AliasExtractorTests
         Assert.Contains(new AliasPair(AliasKind.Item, "B", "bbbbbbbbbbbbbbbbbbbbbbbbbb"), pairs);
     }
 
+    [Fact]
+    public void Reads_custom_field_labels_and_never_their_values()
+    {
+        var pairs = Extract($$$"""{"id":"{{{ItemId}}}","title":"API","fields":[{"id":"password","label":"password","value":"hunter2"},{"id":"dddddddddddddddddddddddddd","label":"API Key","value":"s3cret"}]}""");
+
+        Assert.Equal([new AliasPair(AliasKind.Item, "API", ItemId), new AliasPair(AliasKind.Field, "API Key", "dddddddddddddddddddddddddd")], pairs);
+    }
+
     [Theory]
     [InlineData("hunter2\n")]
     [InlineData("ID:          q1w2e3r4t5y6u7i8o9p0a1s2d3\nTitle:       GitHub\n")]

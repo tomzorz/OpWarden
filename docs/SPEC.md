@@ -59,7 +59,7 @@ An `op://<vault>/<item>/<field>` string in an argument, in an environment variab
 Do not use: op URI, ref.
 
 ### alias pair (noun)
-A vault or item name together with the UUID that names the same vault or item.
+A vault name, an item name, or a field label, together with the UUID that names the same vault, item, or field.
 Do not use: mapping, alias (alone).
 
 ### request tuple (noun)
@@ -334,15 +334,27 @@ REQ-RULE-22: The broker MUST compare vault names, item names, and keys without r
 
 REQ-RULE-23: When the broker compares a UUID with a name, and the broker stores no alias pair for that UUID, the result MUST be a possible match. The reason is that alias pairs reach the broker only from captured `read` output, so an unseen UUID can name each vault or item.
 
-REQ-RULE-24: When the broker stores an alias pair for a UUID and a name, and the broker also stores a different UUID for the same name, the comparison of that UUID with that name MUST be a possible match. The reason is that two vaults can each hold an item with the same name.
+REQ-RULE-24: When a rule pins a name, and the broker stores an alias pair for that name and the request-tuple UUID, the comparison MUST be a match. When a rule pins a UUID, and the broker stores an alias pair for that UUID and the request-tuple name, the comparison MUST be a match only when the broker stores no other UUID for that name, and MUST be a possible match otherwise. The reason is that two vaults can each hold an item with the same name.
 
-REQ-RULE-25: When one key equals the other key's last `/`-separated part, the comparison MUST be a possible match. The reason is that a secret reference can name a field with its section or without it.
+REQ-RULE-25: The broker MUST compare the field part of two keys, the part after the last `/`, by REQ-RULE-22 to REQ-RULE-24. When the field parts match and the keys name different sections, or only one key names a section, the comparison MUST be a possible match. The reason is that a secret reference can name a field with its section or without it.
 
 REQ-RULE-26: For REQ-RULE-18, the broker MUST treat a vault that is a possible match for a `prompt-always` vault as marked `prompt-always`.
 
 REQ-RULE-27: For a `run` invocation whose secret references are unknown, the broker MUST NOT return `allow` from rules alone. The broker MUST show a prompt, unless REQ-RULE-13 returns `deny`.
 
 REQ-RULE-28: When two matching `allow` rules tie on specificity, the broker MUST apply the rule with the shorter cache grant, and a rule without a cache grant is the shortest.
+
+### 7.2 Rule notices
+
+**Notice decision (2026-10-03):** OpWarden tells the user about each rule that pins a vault, an item, or a key by only one of its two forms, name or UUID, and offers the rule for the other form when the broker knows it. Tamás asked for this after REQ-RULE-23 left one visible effect: an `allow` rule that pins one form prompts for the other form until the broker sees the alias pair. A `deny` rule needs no such notice, because REQ-RULE-23 already denies an unseen UUID.
+
+REQ-RULE-29: The management window MUST show a notice beside each `allow` rule that pins a vault, an item, or a key, when the broker stores no alias pair for the pinned value. The notice MUST state that a request naming the value by its other form shows a prompt. A key that names a built-in field, whose UUID equals its label, needs no notice.
+
+REQ-RULE-30: When the broker stores exactly one other form for a pinned value, and no stored rule pins that other form in the same position, the management window MUST show a notice that offers to store a second rule. The second rule MUST equal the first rule in each field except that one field, which pins the other form.
+
+REQ-RULE-31: When the broker stores more than one other form for a pinned value, the management window MUST show a notice that lists each other form, and the notice MUST NOT offer a second rule.
+
+REQ-RULE-32: When the broker stores a rule from a prompt, and REQ-RULE-29, REQ-RULE-30, or REQ-RULE-31 gives that rule a notice, the session agent MUST show that notice.
 
 ## 8. Requirements: broker trust and rule management
 
@@ -471,7 +483,7 @@ Rollback:
 - Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file.
 - Dropped process-creation events: a dropped event leaves one caller unresolvable for as long as that caller runs, and REQ-CALL-18 then classifies it as `unknown`. The failure is a prompt the interactive user cannot clear, and the failure is not a wrong verdict. The reliability spike measured no drop at 402 process starts per second, which is roughly two orders of magnitude above a normal machine. REQ-CALL-3 keeps the consumer cheap, because a slow consumer is the documented cause of drops.
 - Ancestry that predates the broker: REQ-CALL-5 seeds the map from a snapshot, and a snapshot cannot recover a parent that exited before the snapshot. A process whose recorded parent already exited at broker start therefore resolves no further than itself. The gap closes as processes cycle, and the gap reopens at every broker restart.
-- Field IDs: a secret reference can name a field by its ID instead of its label. Alias pairs cover vaults and items only, so a `deny` rule that pins a key by label does not match the same field named by ID. A `deny` rule that pins the item, or the vault, closes the gap.
+- Built-in field list: REQ-RULE-29 exempts built-in fields from notices, and the implementation recognises `password` and `username` as built-in. A built-in field outside that list gets a notice that it does not need.
 - Machine-wide process observation: the broker sees every process start on the machine for as long as the broker runs. REQ-CALL-4 keeps that record in memory and off both the disk and the audit log, so the exposure is bounded by broker memory, which section 16 already grants to an elevated attacker.
 
 ## 17. Open decisions

@@ -28,8 +28,8 @@ internal static class FieldMatcher
         : FieldMatch.No;
 
     /// <summary>
-    /// Compares a vault or an item, treating a name and its ID as one value (REQ-RULE-16,
-    /// REQ-RULE-22 to REQ-RULE-24).
+    /// Compares a vault, an item or a field, treating a name and its ID as one value
+    /// (REQ-RULE-16, REQ-RULE-22 to REQ-RULE-24).
     /// </summary>
     public static FieldMatch Named(string? rule, string? request, AliasKind kind, AliasStore aliases)
     {
@@ -46,26 +46,36 @@ internal static class FieldMatcher
 
         // An ID the broker has never seen could be anything, the name included.
         if (namesOfId.Count == 0) return FieldMatch.Possible;
-        if (!namesOfId.Contains(AliasStore.Normalize(name))) return FieldMatch.No;
+        if (!namesOfId.Contains(name)) return FieldMatch.No;
 
-        // The pair is known. It is the same value only when the name has no other ID.
-        return aliases.IdsFor(kind, name).Count == 1 ? FieldMatch.Definite : FieldMatch.Possible;
+        // The pair is known. A rule that pins the name covers everything carrying that
+        // name. A rule that pins the ID covers the name only when no other ID carries it.
+        return !ruleIsId || aliases.IdsFor(kind, name).Count == 1 ? FieldMatch.Definite : FieldMatch.Possible;
     }
 
     /// <summary>
-    /// Compares a key. A reference may name a field with or without its section
-    /// (<c>password</c> or <c>Login/password</c>), so a key that is the other's last
-    /// segment could be the same field (REQ-RULE-25).
+    /// Compares a key: by label or ID like <see cref="Named"/>, and with or without its
+    /// section. A reference may name a field as <c>password</c> or <c>Login/password</c>,
+    /// so the same field under a different or missing section is only a possible match
+    /// (REQ-RULE-25).
     /// </summary>
-    public static FieldMatch Key(string? rule, string? request)
+    public static FieldMatch Key(string? rule, string? request, AliasStore aliases)
     {
         if (rule is null) return FieldMatch.Definite;
         if (request is null) return FieldMatch.Possible;
         if (string.Equals(rule, request, StringComparison.OrdinalIgnoreCase)) return FieldMatch.Definite;
 
-        return request.EndsWith("/" + rule, StringComparison.OrdinalIgnoreCase) || rule.EndsWith("/" + request, StringComparison.OrdinalIgnoreCase)
-            ? FieldMatch.Possible
-            : FieldMatch.No;
+        var (ruleSection, ruleField) = SplitKey(rule);
+        var (requestSection, requestField) = SplitKey(request);
+        var field = Named(ruleField, requestField, AliasKind.Field, aliases);
+        var sameSection = string.Equals(ruleSection, requestSection, StringComparison.OrdinalIgnoreCase);
+        return field == FieldMatch.Definite && !sameSection ? FieldMatch.Possible : field;
+    }
+
+    private static (string? Section, string Field) SplitKey(string key)
+    {
+        var slash = key.LastIndexOf('/');
+        return slash < 0 ? (null, key) : (key[..slash], key[(slash + 1)..]);
     }
 
     public static FieldMatch Combine(params ReadOnlySpan<FieldMatch> matches)

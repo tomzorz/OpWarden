@@ -8,7 +8,9 @@ namespace OpWarden.Core.Rules;
 /// <remarks>
 /// Reads the op CLI's JSON item shape, from <c>op item get --format json</c> (one item)
 /// or <c>op item list --format json</c> (an array): an item carries <c>id</c> and
-/// <c>title</c>, and a nested <c>vault</c> object carries <c>id</c> and <c>name</c>.
+/// <c>title</c>, a nested <c>vault</c> object carries <c>id</c> and <c>name</c>, and each
+/// entry of a <c>fields</c> array carries <c>id</c> and <c>label</c>. Field values sit
+/// beside them in the same objects and are never read.
 /// That shape is taken from the op CLI's JSON as commonly seen, not from a documented
 /// schema; output in any other shape, human-readable included, yields no pairs. Missing
 /// pairs cost precision only: <see cref="FieldMatcher"/> treats an unseen ID as possibly
@@ -47,6 +49,15 @@ public static class AliasExtractor
 
         if (Pair(item, "title", AliasKind.Item) is { } itemPair) pairs.Add(itemPair);
         if (item.TryGetProperty("vault", out var vault) && Pair(vault, "name", AliasKind.Vault) is { } vaultPair) pairs.Add(vaultPair);
+        if (item.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Array)
+        {
+            // Built-in fields have IDs like "password" that equal their labels; only the
+            // generated IDs of custom fields make a pair worth keeping.
+            foreach (var field in fields.EnumerateArray())
+            {
+                if (Pair(field, "label", AliasKind.Field) is { } fieldPair) pairs.Add(fieldPair);
+            }
+        }
     }
 
     private static AliasPair? Pair(JsonElement element, string nameProperty, AliasKind kind)

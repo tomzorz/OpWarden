@@ -4,11 +4,12 @@ public enum AliasKind
 {
     Vault,
     Item,
+    Field,
 }
 
 /// <summary>
-/// A vault or item name together with the ID that names the same vault or item (spec
-/// glossary: alias pair).
+/// A vault name, item name or field label together with the ID that names the same
+/// vault, item or field (spec glossary: alias pair).
 /// </summary>
 public sealed record AliasPair(AliasKind Kind, string Name, string Id);
 
@@ -20,9 +21,9 @@ public sealed record AliasPair(AliasKind Kind, string Name, string Id);
 /// several IDs (two vaults each holding an item called "GitHub"), so the store keeps
 /// every ID it has seen per name rather than the latest one.
 ///
-/// ceiling: item pairs are not scoped by vault, so a name that is ambiguous across
-/// vaults stays ambiguous everywhere, even where the vault would settle it. That only
-/// costs prompts, never a wrong allow.
+/// ceiling: item pairs are not scoped by vault, nor field pairs by item, so a name that
+/// is ambiguous across vaults stays ambiguous everywhere, even where the vault would
+/// settle it. That only costs prompts, never a wrong allow.
 /// </remarks>
 public sealed class AliasStore
 {
@@ -34,8 +35,8 @@ public sealed class AliasStore
     {
         lock (_lock)
         {
-            Get(_idsByName, (pair.Kind, Normalize(pair.Name))).Add(pair.Id);
-            Get(_namesById, (pair.Kind, pair.Id)).Add(Normalize(pair.Name));
+            Get(_idsByName, (pair.Kind, Normalize(pair.Name)), StringComparer.Ordinal).Add(pair.Id);
+            Get(_namesById, (pair.Kind, pair.Id), StringComparer.OrdinalIgnoreCase).Add(pair.Name);
         }
     }
 
@@ -56,13 +57,14 @@ public sealed class AliasStore
     }
 
     /// <summary>
-    /// The names the store has seen for an ID.
+    /// The names the store has seen for an ID, spelled as first seen and compared
+    /// without regard to case.
     /// </summary>
     public IReadOnlySet<string> NamesFor(AliasKind kind, string id)
     {
         lock (_lock)
         {
-            return _namesById.TryGetValue((kind, id), out var names) ? names.ToHashSet() : [];
+            return _namesById.TryGetValue((kind, id), out var names) ? names.ToHashSet(StringComparer.OrdinalIgnoreCase) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
     }
 
@@ -72,11 +74,11 @@ public sealed class AliasStore
     /// </summary>
     public static bool LooksLikeId(string value) => value.Length == 26 && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c));
 
-    internal static string Normalize(string name) => name.ToUpperInvariant();
+    private static string Normalize(string name) => name.ToUpperInvariant();
 
-    private static HashSet<string> Get(Dictionary<(AliasKind, string), HashSet<string>> map, (AliasKind, string) key)
+    private static HashSet<string> Get(Dictionary<(AliasKind, string), HashSet<string>> map, (AliasKind, string) key, StringComparer comparer)
     {
-        if (!map.TryGetValue(key, out var set)) map[key] = set = [];
+        if (!map.TryGetValue(key, out var set)) map[key] = set = new HashSet<string>(comparer);
         return set;
     }
 }
