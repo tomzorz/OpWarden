@@ -66,8 +66,23 @@ internal sealed class BrokerHarness : IAsyncDisposable
         return new TestAgent(pipe);
     }
 
-    public IReadOnlyList<JsonElement> AuditEntries() =>
-        File.Exists(AuditPath) ? [.. File.ReadAllLines(AuditPath).Select(line => JsonDocument.Parse(line).RootElement.Clone())] : [];
+    /// <summary>
+    /// The audit log so far, read the way any tail would: sharing the file with the
+    /// broker, which may be appending.
+    /// </summary>
+    public IReadOnlyList<JsonElement> AuditEntries()
+    {
+        if (!File.Exists(AuditPath)) return [];
+        using var reader = new StreamReader(new FileStream(AuditPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+        var entries = new List<JsonElement>();
+        while (reader.ReadLine() is { } line)
+        {
+            using var document = JsonDocument.Parse(line);
+            entries.Add(document.RootElement.Clone());
+        }
+
+        return entries;
+    }
 
     public async ValueTask DisposeAsync()
     {

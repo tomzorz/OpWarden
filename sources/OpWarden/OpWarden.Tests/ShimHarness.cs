@@ -105,6 +105,8 @@ internal static class BuiltExecutables
 
     public static string Probe => Locate("OpWarden.Probe", "OpWarden.Probe.exe");
 
+    public static string SessionAgent => Locate("OpWarden.SessionAgent", Path.Combine("win-x64", "OpWarden.SessionAgent.exe"));
+
     // The tests run from <solution>\OpWarden.Tests\bin\<configuration>\<tfm>\, and the
     // project references build the shim and the probe into the same shape beside them.
     private static string Locate(string project, string relativePath)

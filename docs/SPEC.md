@@ -500,7 +500,14 @@ Rollback:
 
 ## 17. Open decisions
 
-None. Every decision this document opened is resolved and recorded in the section it affects.
+**Prompt input from scripts (opened 2026-10-03, deferred by Tamás).** A named agent runs as the interactive user, so it can drive the prompt window with injected input or posted window messages, and answer its own prompt. Windows Hello does not close the gap while the op CLI session is warm, and a scripted `always-allow` stores a permanent rule. Two candidate answers:
+
+- The session agent accepts a decision only from hardware input. Open sub-question: remote-desktop tools such as Parsec can inject their input, which would make prompts unanswerable remotely.
+- OpWarden requires that the op CLI session never stays warm, so each op CLI run passes Windows Hello, and the cache (section 9) absorbs repeated reads. A scripted decision then cannot complete an op CLI run without Hello; it can still approve cached output and store rules, so the cache grant and the `always-` decisions become the controls to guard.
+
+The session agent routes every decision through one acceptance check, so either answer fits without rework.
+
+Every other decision this document opened is resolved and recorded in the section it affects.
 
 | Was open | Resolved | Landed in |
 |---|---|---|

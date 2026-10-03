@@ -3,6 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Test names are sentences; underscores keep them readable in the runner. -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
@@ -22,6 +23,7 @@
     <!-- Built for their output only: the end-to-end tests run them as real processes. -->
     <ProjectReference Include="..\OpWarden.Shim\OpWarden.Shim.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\OpWarden.Probe\OpWarden.Probe.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\OpWarden.SessionAgent\OpWarden.SessionAgent.csproj" />
   </ItemGroup>
 
 </Project>

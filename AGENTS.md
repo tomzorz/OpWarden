@@ -26,4 +26,6 @@ dotnet format
 
 Tests run on Microsoft.Testing.Platform (`global.json`); pass xunit filters after `--`, for example `dotnet test -- --filter-method "*Shim*"`. The end-to-end tests run the built shim and probe as real processes, so build before `dotnet test --no-build`.
 
+The session-agent UI tests put real windows on the desktop, so they run only with `OPWARDEN_UI_TESTS=1`; set `OPWARDEN_UI_SCREENSHOTS` to a folder to get a PNG of each prompt. They render through `PrintWindow`, which works while the workstation is locked.
+
 The shim publishes NativeAOT (`dotnet publish OpWarden.Shim -c Release -o <dir>`). If the native link cannot find `vswhere.exe`, put `C:\Program Files (x86)\Microsoft Visual Studio\Installer` on PATH; if it still fails, `-t:IlcCompile` proves the code is AOT-clean. The REQ-SHIM-8 latency test runs only against a published shim: set `OPWARDEN_AOT_SHIM` to its `op.exe`.
