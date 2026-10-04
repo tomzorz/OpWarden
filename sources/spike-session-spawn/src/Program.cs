@@ -10,6 +10,7 @@
 //   service          run as the service (what the SCM starts)
 //   grant <account>  add SeTcbPrivilege to the account (elevated)
 //   revoke <account> remove it again (elevated)
+//   grant-etw <account>  let the account enable Kernel-Process events (elevated)
 //   marker           the child: record who and where it is, then exit
 //
 // Everything is written to spike.log beside the executable. Raw Win32, no packages:
@@ -37,6 +38,7 @@ internal static unsafe partial class Program
                 "service" => RunService(),
                 "grant" when args.Length == 2 => ChangeRight(args[1], add: true),
                 "revoke" when args.Length == 2 => ChangeRight(args[1], add: false),
+                "grant-etw" when args.Length == 2 => GrantEtw(args[1]),
                 "marker" => Marker(),
                 _ => Usage(),
             };
@@ -51,7 +53,7 @@ internal static unsafe partial class Program
 
     private static int Usage()
     {
-        Console.Error.WriteLine("usage: opwarden-spike-spawn service | grant <account> | revoke <account> | marker");
+        Console.Error.WriteLine("usage: opwarden-spike-spawn service | grant <account> | revoke <account> | grant-etw <account> | marker");
         return 2;
     }
 
@@ -276,6 +278,7 @@ internal static unsafe partial class Program
         try
         {
             Experiment();
+            EtwExperiment();
         }
         catch (Exception e)
         {
