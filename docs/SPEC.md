@@ -128,7 +128,7 @@ OpWarden has three executables, two data files, and two in-memory stores:
 
 - The shim: a small executable named `op.exe`, placed on `PATH` ahead of the op CLI. The shim parses the invocation, asks the broker for a verdict over a local named pipe, and acts on the verdict. The shim never connects to the desktop app's named pipe.
 - The broker: a Windows service under the service account. The broker maintains the process map, resolves the caller, matches rules, evaluates cache grants, serializes prompts through the session agent, runs the bypass watcher, and writes the audit log.
-- The session agent: an unprivileged process that the broker starts in the interactive user's logon session. The session agent renders prompts, notifications, and the management window. The session agent holds no state.
+- The session agent: an unprivileged process that starts at each logon in the interactive user's logon session, and that the broker pins (REQ-TRUST-3, REQ-TRUST-4). The session agent renders prompts, notifications, and the management window. The session agent holds no state.
 - The rule store and the audit log: files under the install directory, writable only by the service account and by Administrators (REQ-TRUST-2).
 - The cache: broker process memory only.
 - The process map: broker process memory only. The broker builds it from process-creation events and uses it to resolve callers (section 5).
@@ -245,7 +245,7 @@ REQ-CALL-21: The broker MUST decode each process-creation event by the layout th
 
 REQ-CALL-22: For REQ-CALL-15, the interactive logon session's shell is a process whose image is `explorer.exe` in the Windows directory, and that runs in the active console session.
 
-**Event-access finding (2026-10-04):** an account in Performance Log Users can start a trace session, but Windows refuses that account when it enables `Microsoft-Windows-Kernel-Process` in the session: the provider carries access control of its own. Membership in Performance Log Users therefore does not give the service account process-creation events, and section 17 holds the open question of how the install procedure grants them.
+**Event-access decision (2026-10-04):** a virtual service account receives process-creation events only with two grants, which the install procedure makes and the rollback reverts: membership in Performance Log Users, without which Windows refuses to start the trace session, and the right to enable `Microsoft-Windows-Kernel-Process`, granted with `EventAccessControl`, without which Windows refuses to enable the provider. The provider carries access control of its own, so membership alone is not enough. The service-account spike measured all three states under the service account: the trace session refused without membership, the provider refused with membership alone, and four process-start events in five seconds with both grants.
 
 ## 6. Requirements: command classification
 
@@ -352,7 +352,7 @@ REQ-RULE-27: For a `run` invocation whose secret references are unknown, the bro
 
 REQ-RULE-28: When two matching `allow` rules tie on specificity, the broker MUST apply the rule with the shorter cache grant, and a rule without a cache grant is the shortest.
 
-**Item-JSON decision (2026-10-04):** real `op item get` and `op item list` output, provided by Tamás, showed three things the matching rules had to absorb. The built-in fields carry fixed IDs (`username`, `password`, `notesPlain`) that need not equal their labels: the `username` field was labelled `email`. Sections carry IDs of the form `Section_…`. And one vault ID appeared as "Personal" in `op item get` and as "Private" in `op item list`.
+**Item-JSON decision (2026-10-04):** real `op item get` and `op item list` output, provided by Tamás, showed three things the matching rules had to absorb. The built-in fields carry fixed IDs (`username`, `password`, `notesPlain`) that need not equal their labels: the `username` field was labelled `email`. Sections carry IDs of the form `Section_…`. And one vault ID appeared as "Personal" in `op item get` and as "Private" in `op item list`. Five `op read` checks on the same account then confirmed what the op CLI resolves: a built-in field by its ID (`username` for the field labelled `email`), the default vault by its other name (`Private` for `Personal`), a reference with every part in other letter case, a sectioned field without its section, and a custom field by its ID. Each rule below therefore covers a reference the op CLI really accepts.
 
 REQ-RULE-35: The broker MUST treat the following values as UUIDs under REQ-RULE-23 and REQ-RULE-24: a 26-character lowercase alphanumeric value, a built-in field ID (`username`, `password`, `notesPlain`) in the key, and a value that starts with `Section_` in the section part of a key.
 
@@ -384,9 +384,11 @@ REQ-TRUST-1: The broker MUST run as a Windows service under the service account.
 
 REQ-TRUST-2: The rule store and the audit log MUST accept writes only from the service account and from Administrators. The interactive user MAY read both files. The reason for the Administrators exception is recovery when the broker is broken.
 
-REQ-TRUST-3: At each logon of the interactive user, the broker MUST start the session agent from its installed path in that logon session, and MUST record the started process's identifier.
+**Session-agent decision (2026-10-04):** the session agent starts itself at logon, and the broker pins it, instead of the broker starting it. The broker would need `WTSQueryUserToken`, and the service-account spike showed that a virtual service account cannot call it: with `SeTcbPrivilege` granted and enabled, the call still failed with access denied (5), because Windows grants it to LocalSystem only. Running the broker as LocalSystem would hand the most powerful account on the machine to a process that parses untrusted input from every agent, so the fallback planned on 2026-10-02 applies.
 
-REQ-TRUST-4: The broker MUST accept a decision only from the pipe connection whose client process identifier equals the recorded session-agent identifier. The reason is that without pinning, every same-user process can forge decisions, which defeats the service split.
+REQ-TRUST-3: The install procedure MUST register the session agent to start at each logon of the interactive user, from its installed path. The broker MUST NOT start the session agent.
+
+REQ-TRUST-4: The broker MUST pin the first session-agent pipe connection whose client process runs the installed session-agent executable, by image path, in the active console session. The broker MUST accept a decision only from the pinned connection. When the pinned connection closes, the broker MUST pin the next connection that meets the same test. The reason is that without pinning, every same-user process can forge decisions, which defeats the service split.
 
 REQ-TRUST-5: The broker MUST accept a rule mutation from the management window only when the pipe client's token is an elevated Administrators token. The session agent MUST request elevation before it opens the management window.
 
@@ -521,18 +523,24 @@ Preconditions: the op CLI is installed, the desktop-app integration works, and t
 1. Build the shim, the broker, and the session agent as NativeAOT executables.
 2. Install all three executables to the install directory.
 3. Register the broker as a Windows service under `NT SERVICE\OpWarden`, with automatic start.
-4. Set the file permissions from REQ-TRUST-2 on the rule store and the audit log.
-5. Record the op CLI's directory in the broker configuration as the real op CLI path.
-6. Place the shim directory on `PATH` ahead of the op CLI directory.
-7. Sign out, then sign in. The session agent starts (REQ-TRUST-3).
-8. Open a new terminal. Run `op --version`. The prompt appears, classified as a `meta` action from the interactive user.
-9. Decide `allow-once`. The op CLI version prints. This result confirms transparent passthrough.
+4. Add `NT SERVICE\OpWarden` to the Performance Log Users group.
+5. Grant `NT SERVICE\OpWarden` the right to enable `Microsoft-Windows-Kernel-Process` with `EventAccessControl`. Before the grant, save the provider's security value under `HKLM\SYSTEM\CurrentControlSet\Control\WMI\Security`, or record that it is absent.
+6. Register the session agent to start at each logon (REQ-TRUST-3).
+7. Set the file permissions from REQ-TRUST-2 on the rule store and the audit log.
+8. Record the op CLI's directory in the broker configuration as the real op CLI path.
+9. Place the shim directory on `PATH` ahead of the op CLI directory.
+10. Sign out, then sign in. The session agent starts (REQ-TRUST-3).
+11. Open a new terminal. Run `op --version`. The prompt appears, classified as a `meta` action from the interactive user.
+12. Decide `allow-once`. The op CLI version prints. This result confirms transparent passthrough.
 
 Rollback:
 
 1. Remove the shim directory from `PATH`.
-2. Stop and unregister the broker service. The session agent exits with it.
-3. The op CLI then runs directly, unchanged.
+2. Stop and unregister the broker service.
+3. Remove the session agent's logon registration, and stop the session agent.
+4. Put the saved security value of `Microsoft-Windows-Kernel-Process` back, or delete the value when it was absent before the install.
+5. Remove `NT SERVICE\OpWarden` from the Performance Log Users group.
+6. The op CLI then runs directly, unchanged.
 
 ## 15. Non-goals
 
@@ -545,7 +553,7 @@ Rollback:
 
 - PATH bypass: a caller that runs the op CLI by its full path bypasses the shim. The bypass watcher records the start and notifies the session agent; nothing blocks the invocation. The procedure in section 13 closes the cold-session case at the biometric prompt.
 - Elevated attacker: a process with an elevated Administrators token can stop the broker, edit the rule store, and read broker memory. OpWarden's privilege separation targets non-elevated same-user processes, which is what agents are.
-- Session-agent replacement: the pinning in REQ-TRUST-3 and REQ-TRUST-4 raises the bar against decision forgery. A same-user process that kills the session agent and races the broker's restart is detectable through the audit log, not preventable.
+- Session-agent replacement: the pinning in REQ-TRUST-4 raises the bar against decision forgery. A same-user process can still inject code into the pinned session agent, or kill it and race a copy of the installed executable to the pin. Both are detectable through the audit log, not preventable.
 - Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file, but REQ-CACHE-14 means only ciphertext reaches it.
 - Audit-log tail between anchors: REQ-AUD-9 records the entry count at intervals, so deleting the entries written since the last count goes unnoticed. The window is at most 30 seconds of entries.
 - Integrity in the console broker: the console broker runs as the interactive user, so the integrity key of REQ-INT-2 and the in-memory key of REQ-INT-6 are within that user's reach. A process that decrypts the vault, or reads the in-memory key from broker memory, can forge a seal. Section 8.1 targets file edits and memory edits, and the service account is what puts the keys out of reach.
@@ -563,8 +571,6 @@ Rollback:
 - OpWarden requires that the op CLI session never stays warm, so each op CLI run passes Windows Hello, and the cache (section 9) absorbs repeated reads. A scripted decision then cannot complete an op CLI run without Hello; it can still approve cached output and store rules, so the cache grant and the `always-` decisions become the controls to guard.
 
 The session agent routes every decision through one acceptance check, so either answer fits without rework.
-
-**Process events for the service account (opened 2026-10-04).** The event-access finding in section 5 shows that the service account needs a grant beyond Performance Log Users to enable `Microsoft-Windows-Kernel-Process`. The candidate answer: the install procedure grants the service account the right to enable that one provider, with `EventAccessControl`, and the rollback revokes it. A spike under the service account decides whether the grant works; until it does, the broker reports the missing events (REQ-CALL-20) and resolves callers by the live walk.
 
 Every other decision this document opened is resolved and recorded in the section it affects.
 

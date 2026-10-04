@@ -28,7 +28,7 @@ Serialization is source-generated `System.Text.Json` everywhere. Reflection-base
 6. **Process map and bypass watcher** (sections 5 and 10).
 7. **Install and rollback script** (section 14). Acceptance is section 14 steps 7 to 9.
 
-The session-agent spawn question below gets validated before step 5 builds on it.
+Step 5 builds on the service-account spike's results, summarised under "What the service account needs".
 
 ## AOT everywhere, for now
 
@@ -45,16 +45,12 @@ Section 3 and section 14 step 1 make all three executables NativeAOT, and that s
 - **Integrity vault** (REQ-INT-2): `CryptProtectData` / `CryptUnprotectData` through P/Invoke, which avoids the `ProtectedData` package. Under the service account the vault decrypts only for `NT SERVICE\OpWarden`.
 - **Service registration:** `sc.exe create OpWarden binPath= ... obj= "NT SERVICE\OpWarden" start= auto`. The virtual account exists implicitly; grant it the data-directory ACLs from REQ-TRUST-2 at install time.
 
-## Known hard spot: starting the session agent from the service
+## What the service account needs
 
-REQ-TRUST-3 has the broker start the session agent in the user's logon session. `CreateProcessAsUser` into the interactive session needs a user token from `WTSQueryUserToken`, which requires `SeTcbPrivilege`, and a virtual service account does not hold that by default.
+The service-account spike (`sources/spike-session-spawn/`) settled both questions under a real virtual account; spec sections 5 and 8 carry the decisions and section 14 the install steps.
 
-Plan, in order:
-
-1. Grant `SeTcbPrivilege` to `NT SERVICE\OpWarden` at install time through `LsaAddAccountRights`, and prove with a throwaway service that `WTSQueryUserToken` plus `CreateProcessAsUser` then works from the virtual account.
-2. If the grant is ugly or does not work, amend the spec instead of hacking around it: the session agent autostarts at logon, and the broker pins the first connection that arrives from the installed path inside the interactive session.
-
-The proof needs an elevated shell, so it is a hands-on step for the machine owner.
+- **No session spawn.** `WTSQueryUserToken` refuses a virtual service account even with `SeTcbPrivilege` held and enabled (access denied), because Windows reserves it for LocalSystem. So the session agent starts itself at logon (a Run entry the installer writes), and the broker pins the first connection from the installed executable in the console session (REQ-TRUST-3, REQ-TRUST-4).
+- **Process events need two grants.** Membership in Performance Log Users lets the account start the trace session, and an `EventAccessControl` grant (`TRACELOG_GUID_ENABLE` on `Microsoft-Windows-Kernel-Process`) lets it enable the provider. The grant lives in `HKLM\SYSTEM\CurrentControlSet\Control\WMI\Security`, value named after the provider GUID; the installer saves that value first and the rollback puts it back byte for byte, which is what the spike script does.
 
 ## Testing
 
