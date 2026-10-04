@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using OpWarden.Broker.Audit;
 using OpWarden.Broker.Cache;
+using OpWarden.Broker.Callers;
 using OpWarden.Broker.Integrity;
 using OpWarden.Broker.Prompts;
 using OpWarden.Broker.Storage;
@@ -31,7 +32,7 @@ public sealed class BrokerService(
     SecretCache cache,
     IntegrityAlarm alarm,
     Action<AgentMessage> notify,
-    Func<int, CallerIdentity> resolveCaller)
+    Func<int, CallerResolution> resolveCaller)
 {
     // The cache grant an allowed read earned, held until its capture arrives on the same
     // connection. Keyed by the request object, which the pipe server hands to both calls.
@@ -39,7 +40,8 @@ public sealed class BrokerService(
 
     public async ValueTask<VerdictResponse> DecideAsync(ShimRequest request, int clientProcessId, CancellationToken abandoned)
     {
-        var caller = resolveCaller(clientProcessId);
+        var resolution = resolveCaller(clientProcessId);
+        var caller = resolution.Caller;
         var cacheKey = IsCacheable(request, caller) ? CacheKey.For(caller, request.Arguments) : null;
         var evaluation = Evaluate(caller, request);
 
@@ -49,7 +51,7 @@ public sealed class BrokerService(
         var cacheMayAnswer = evaluation is RuleVerdict { Verdict: Verdict.Allow } or PromptNeeded { Options: PromptOptions.AllDecisions };
         if (cacheKey is not null && cacheMayAnswer && cache.TryGet(cacheKey) is { } cached)
         {
-            return TryAudit(caller, request, Verdict.Allow, VerdictReason.Cache) is { } failure ? failure : VerdictResponse.FromCache(cached);
+            return TryAudit(resolution, request, Verdict.Allow, VerdictReason.Cache) is { } failure ? failure : VerdictResponse.FromCache(cached);
         }
 
         var outcome = evaluation switch
@@ -59,7 +61,7 @@ public sealed class BrokerService(
             _ => throw new InvalidOperationException($"Unhandled evaluation {evaluation}."),
         };
 
-        if (TryAudit(caller, request, outcome.Verdict, outcome.Reason) is { } auditFailure) return auditFailure;
+        if (TryAudit(resolution, request, outcome.Verdict, outcome.Reason) is { } auditFailure) return auditFailure;
         if (outcome.Verdict == Verdict.Deny) return VerdictResponse.Deny(outcome.Message);
 
         if (cacheKey is not null && outcome.Grant is { } ttl) _grants.AddOrUpdate(request, new Grant(cacheKey, ttl));
@@ -119,15 +121,15 @@ public sealed class BrokerService(
     /// Records an invocation, and returns the deny to hand out instead when the audit log
     /// cannot take it (REQ-AUD-7).
     /// </summary>
-    private VerdictResponse? TryAudit(CallerIdentity caller, ShimRequest request, Verdict verdict, VerdictReason reason)
+    private VerdictResponse? TryAudit(CallerResolution resolution, ShimRequest request, Verdict verdict, VerdictReason reason)
     {
         try
         {
             audit.Append(new AuditEntry(
                 DateTimeOffset.UtcNow,
                 "invocation",
-                caller,
-                CallerChain: [],
+                resolution.Caller,
+                CallerChain: resolution.Chain,
                 request.Action,
                 request.Command,
                 AuditLog.RedactArguments(request.Arguments, request.Action),

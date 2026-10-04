@@ -1,5 +1,6 @@
 using OpWarden.Broker.Audit;
 using OpWarden.Broker.Cache;
+using OpWarden.Broker.Callers;
 using OpWarden.Broker.Integrity;
 using OpWarden.Broker.Prompts;
 using OpWarden.Broker.Storage;
@@ -8,15 +9,17 @@ using OpWarden.Core.Rules;
 namespace OpWarden.Broker;
 
 /// <param name="DataDirectory">Where the rule store, alias file, integrity vault and audit log live.</param>
-/// <param name="ResolveCaller">Maps the shim's process ID to a caller identity.</param>
+/// <param name="ResolveCaller">Maps the shim's process ID to its caller; null runs the real caller resolution (spec section 5).</param>
+/// <param name="Agents">The agent hosts for real caller resolution; null takes <see cref="CallerService.DefaultAgents"/>.</param>
 public sealed record BrokerHostOptions(
     string OpPath,
     string DataDirectory,
     string ShimPipeName,
     string AgentPipeName,
     TimeSpan PromptTimeout,
-    Func<int, CallerIdentity> ResolveCaller,
-    Action<Exception> ConnectionFailed);
+    Func<int, CallerResolution>? ResolveCaller,
+    Action<Exception> ConnectionFailed,
+    IReadOnlyList<AgentHost>? Agents = null);
 
 /// <summary>
 /// The broker, assembled: integrity vault, sealed stores, cache, prompt queue, and both
@@ -27,6 +30,7 @@ public sealed class BrokerHost : IAsyncDisposable
     private readonly AgentChannel _agent;
     private readonly ShimPipeServer _shims;
     private readonly AuditLog _audit;
+    private readonly CallerService? _callers;
 
     private BrokerHost(BrokerHostOptions options)
     {
@@ -48,8 +52,15 @@ public sealed class BrokerHost : IAsyncDisposable
         Aliases = aliasFile.Load();
         Cache = new SecretCache(alarm.Raise);
 
+        var resolveCaller = options.ResolveCaller;
+        if (resolveCaller is null)
+        {
+            _callers = new CallerService(options.Agents ?? CallerService.DefaultAgents, _audit, _agent.Send);
+            resolveCaller = _callers.Resolve;
+        }
+
         var prompts = new PromptQueue(10, options.PromptTimeout, _agent.Send);
-        broker = new BrokerService(new BrokerSettings(options.OpPath), Rules, Aliases, aliasFile, _audit, prompts, Cache, alarm, _agent.Send, options.ResolveCaller);
+        broker = new BrokerService(new BrokerSettings(options.OpPath), Rules, Aliases, aliasFile, _audit, prompts, Cache, alarm, _agent.Send, resolveCaller);
         _shims = new ShimPipeServer(options.ShimPipeName, broker.DecideAsync, (request, capture, _) => broker.CaptureReceivedAsync(request, capture), options.ConnectionFailed);
 
         _agent.Start(prompts);
@@ -69,6 +80,7 @@ public sealed class BrokerHost : IAsyncDisposable
         await _shims.DisposeAsync().ConfigureAwait(false);
         await _agent.DisposeAsync().ConfigureAwait(false);
         Cache.Dispose();
+        _callers?.Dispose();
         _audit.Dispose();
     }
 

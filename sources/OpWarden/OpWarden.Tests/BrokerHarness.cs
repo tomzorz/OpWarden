@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using OpWarden.Broker;
 using OpWarden.Broker.Cache;
+using OpWarden.Broker.Callers;
 using OpWarden.Broker.Storage;
 using OpWarden.Core.Agent;
 using OpWarden.Core.Rules;
@@ -23,7 +24,7 @@ internal sealed class BrokerHarness : IAsyncDisposable
     private BrokerHarness(DirectoryInfo data, bool ownsData, TimeSpan promptTimeout, CallerIdentity caller, IEnumerable<Rule> rules)
     {
         (_data, _ownsData) = (data, ownsData);
-        _host = BrokerHost.Start(new BrokerHostOptions(BuiltExecutables.Probe, data.FullName, ShimPipeName, AgentPipeName, promptTimeout, _ => caller, ConnectionErrors.Add));
+        _host = BrokerHost.Start(new BrokerHostOptions(BuiltExecutables.Probe, data.FullName, ShimPipeName, AgentPipeName, promptTimeout, _ => new CallerResolution(caller, ["test-caller(0)"]), ConnectionErrors.Add));
         var seed = rules.ToList();
         if (seed.Count > 0) Rules.Add(seed);
     }

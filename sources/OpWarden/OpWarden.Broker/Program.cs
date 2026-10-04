@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpWarden.Broker;
+using OpWarden.Broker.Callers;
 using OpWarden.Core.Agent;
 using OpWarden.Core.Pipe;
 using OpWarden.Core.Rules;
@@ -42,17 +43,18 @@ var data = Path.GetFullPath(config.DataDirectory, Path.GetDirectoryName(Path.Get
 
 void Log(Exception e) => Console.Error.WriteLine($"{DateTimeOffset.Now:HH:mm:ss} connection error: {e.Message}");
 
-// Caller resolution arrives with the process map (build-order step 6). Until then every
-// caller is unknown, which REQ-CALL-19 turns into a once-only prompt each time: the
-// safe placeholder, never a guess.
+// ResolveCaller null: the real caller resolution, with the process-event session when
+// Windows allows it (an elevated or Performance Log Users console) and the live walk
+// otherwise.
 await using var broker = BrokerHost.Start(new BrokerHostOptions(
     config.OpPath,
     data,
     PipeProtocol.DefaultPipeName,
     AgentProtocol.DefaultPipeName,
     TimeSpan.FromSeconds(30),
-    _ => CallerIdentity.Unknown,
-    Log));
+    null,
+    Log,
+    config.Agents?.Select(a => new AgentHost(a.Name, a.FileName, a.Signer)).ToList()));
 
 Console.WriteLine($"OpWarden broker listening on \\\\.\\pipe\\{PipeProtocol.DefaultPipeName} (shims) and \\\\.\\pipe\\{AgentProtocol.DefaultPipeName} (session agent).");
 Console.WriteLine($"Data in {data}. Ctrl+C stops.");
@@ -67,10 +69,16 @@ await stopped.Task;
 return 0;
 
 /// <summary>
-/// broker.json: <c>{ "opPath": "C:\\...\\op.exe", "dataDirectory": "data" }</c>. A relative
-/// data directory resolves against the config file's folder.
+/// broker.json: <c>{ "opPath": "C:\\...\\op.exe", "dataDirectory": "data", "agents": [ … ] }</c>.
+/// A relative data directory resolves against the config file's folder. Without
+/// <c>agents</c>, the defaults of <see cref="CallerService.DefaultAgents"/> apply.
 /// </summary>
-internal sealed record BrokerConfig(string OpPath, string DataDirectory);
+internal sealed record BrokerConfig(string OpPath, string DataDirectory, IReadOnlyList<AgentHostConfig>? Agents = null);
+
+/// <summary>
+/// One agent host in broker.json: <c>{ "name": "claude-code", "fileName": "claude.exe", "signer": "Anthropic, PBC" }</c>.
+/// </summary>
+internal sealed record AgentHostConfig(string Name, string FileName, string? Signer);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(BrokerConfig))]

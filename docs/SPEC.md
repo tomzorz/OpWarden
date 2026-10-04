@@ -229,7 +229,9 @@ REQ-CALL-14: Before the broker classifies the caller as an agent, the broker MUS
 
 REQ-CALL-15: The broker MUST classify the caller identity as the interactive user only when all three of the following hold: the walk ended without a failed hop, the walk reached the interactive logon session's shell, and no process in the walk matched an agent-host entry.
 
-REQ-CALL-16: An agent-host entry names an executable file name and an Authenticode signer. An entry MAY omit the signer for an unsigned executable, and then the entry matches on file name alone. The configured entries at install are: `claude.exe` (Claude Code), `codex.exe` (Codex CLI), `Cursor.exe` (Cursor), and `opencode.exe` (OpenCode). One file name MAY match two products, because Claude Code and the desktop app share the file name `claude.exe` and share one signer. REQ-CALL-13 resolves that case.
+REQ-CALL-16: An agent-host entry names an executable file name and an Authenticode signer. An entry MAY omit the signer for an unsigned executable, and then the entry matches on file name alone. The configured entries at install are `claude.exe` (Claude Code) with the signer `Anthropic, PBC`, and `opencode.exe` (OpenCode) with no signer. An entry for `codex.exe` (Codex CLI) or `Cursor.exe` (Cursor) MUST NOT be configured until its signer is verified on a machine where that product is installed. One file name MAY match two products, because Claude Code and the desktop app share the file name `claude.exe` and share one signer. REQ-CALL-13 resolves that case.
+
+**Agent-host decision (2026-10-04):** the signers were read on a development machine with `Get-AuthenticodeSignature`: both Claude Code's `claude.exe` and the desktop app's `Claude.exe` carry an embedded Authenticode signature by `Anthropic, PBC`, the op CLI by `Agilebits`, and the OpenCode install that was checked runs through an unsigned shim. Codex CLI and Cursor were not checked, so their signers are unverified and their entries wait.
 
 REQ-CALL-17: The broker MUST record the full resolved ancestor chain in the audit log entry for the invocation.
 
@@ -238,6 +240,12 @@ REQ-CALL-18: When the walk stops at a failed hop, or when the walk ends without 
 REQ-CALL-19: For an `unknown` caller, the broker MUST show a prompt for every invocation, and the prompt MUST offer only `allow-once` and `disallow-once`.
 
 REQ-CALL-20: When the broker cannot subscribe to process-creation events, the broker MUST record the failure in the audit log, and the broker MUST notify the session agent. The reason is that the broker then resolves most callers as `unknown`, and the interactive user otherwise meets a stream of prompts that states no cause.
+
+REQ-CALL-21: The broker MUST decode each process-creation event by the layout that the provider's manifest gives for the event's version. When the broker does not know an event's version, the broker MUST NOT guess a layout, and the process that the event describes stays unresolvable through the process map.
+
+REQ-CALL-22: For REQ-CALL-15, the interactive logon session's shell is a process whose image is `explorer.exe` in the Windows directory, and that runs in the active console session.
+
+**Event-access finding (2026-10-04):** an account in Performance Log Users can start a trace session, but Windows refuses that account when it enables `Microsoft-Windows-Kernel-Process` in the session: the provider carries access control of its own. Membership in Performance Log Users therefore does not give the service account process-creation events, and section 17 holds the open question of how the install procedure grants them.
 
 ## 6. Requirements: command classification
 
@@ -555,6 +563,8 @@ Rollback:
 - OpWarden requires that the op CLI session never stays warm, so each op CLI run passes Windows Hello, and the cache (section 9) absorbs repeated reads. A scripted decision then cannot complete an op CLI run without Hello; it can still approve cached output and store rules, so the cache grant and the `always-` decisions become the controls to guard.
 
 The session agent routes every decision through one acceptance check, so either answer fits without rework.
+
+**Process events for the service account (opened 2026-10-04).** The event-access finding in section 5 shows that the service account needs a grant beyond Performance Log Users to enable `Microsoft-Windows-Kernel-Process`. The candidate answer: the install procedure grants the service account the right to enable that one provider, with `EventAccessControl`, and the rollback revokes it. A spike under the service account decides whether the grant works; until it does, the broker reports the missing events (REQ-CALL-20) and resolves callers by the live walk.
 
 Every other decision this document opened is resolved and recorded in the section it affects.
 
