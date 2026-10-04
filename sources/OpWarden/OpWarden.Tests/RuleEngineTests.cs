@@ -55,7 +55,16 @@ public sealed class RuleEngineTests
         { "deny on a field covers the same field with its section", [Allow(), Deny(key: "password")], Claude, OpAction.Read, new("V", "I", "Login/password"), "deny" },
         { "deny on a sectioned field covers the bare field", [Allow(), Deny(key: "Login/password")], Claude, OpAction.Read, new("V", "I", "password"), "deny" },
         { "allow on a field does not cover it with a section", [Allow(key: "password")], Claude, OpAction.Read, new("V", "I", "Login/password"), "prompt" },
-        { "a key that merely ends the same is a different key", [Allow(), Deny(key: "word")], Claude, OpAction.Read, new("V", "I", "password"), "allow" },
+        { "a key that merely ends the same is a different key", [Allow(), Deny(key: "token")], Claude, OpAction.Read, new("V", "I", "apitoken"), "allow" },
+
+        // Built-in field IDs can carry any label: the username field is often "email".
+        { "deny on a label covers an unseen built-in field ID", [Allow(), Deny(key: "email")], Claude, OpAction.Read, new("V", "I", "username"), "deny" },
+        { "allow on a label does not cover an unseen built-in field ID", [Allow(key: "email")], Claude, OpAction.Read, new("V", "I", "username"), "prompt" },
+
+        // The default vault answers to more than one name.
+        { "deny on Private covers Personal while nothing is known", [Allow(), Deny(vault: "Private")], Claude, OpAction.Read, new("Personal", "I", "K"), "deny" },
+        { "allow on Private does not cover Personal while nothing is known", [Allow(vault: "Private")], Claude, OpAction.Read, new("Personal", "I", "K"), "prompt" },
+        { "other vault names stay distinct", [Allow(), Deny(vault: "Prod")], Claude, OpAction.Read, new("Personal", "I", "K"), "allow" },
 
         // Names are case-insensitive, as the op CLI resolves them.
         { "deny on a vault ignores case", [Allow(), Deny(vault: "Prod")], Claude, OpAction.Read, new("PROD", "I", "K"), "deny" },
@@ -170,6 +179,47 @@ public sealed class RuleEngineTests
         Assert.Equal("allow", Outcome(Engine([Allow(key: "Login/API Key")], aliases).Evaluate(Claude, OpAction.Read, new("V", "I", "Login/" + ApiKeyFieldId), [], false)));
         Assert.Equal("prompt", Outcome(Engine([Allow(key: "Login/API Key")], aliases).Evaluate(Claude, OpAction.Read, new("V", "I", ApiKeyFieldId), [], false)));
         Assert.Equal("deny", Outcome(Engine([Allow(), Deny(key: "Login/API Key")], aliases).Evaluate(Claude, OpAction.Read, new("V", "I", ApiKeyFieldId), [], false)));
+    }
+
+    [Fact]
+    public void Two_names_of_one_vault_id_are_one_vault()
+    {
+        var aliases = new AliasStore();
+        aliases.Add(new AliasPair(AliasKind.Vault, "Personal", DevId));
+        aliases.Add(new AliasPair(AliasKind.Vault, "Private", DevId));
+
+        Assert.Equal("allow", Outcome(Engine([Allow(vault: "Private")], aliases).Evaluate(Claude, OpAction.Read, new("Personal", "I", "K"), [], false)));
+    }
+
+    [Fact]
+    public void Default_vault_names_known_to_be_different_vaults_are_different()
+    {
+        var aliases = new AliasStore();
+        aliases.Add(new AliasPair(AliasKind.Vault, "Personal", DevId));
+        aliases.Add(new AliasPair(AliasKind.Vault, "Private", ProdId));
+
+        Assert.Equal("allow", Outcome(Engine([Allow(), Deny(vault: "Private")], aliases).Evaluate(Claude, OpAction.Read, new("Personal", "I", "K"), [], false)));
+    }
+
+    [Fact]
+    public void A_learned_built_in_field_label_covers_its_id()
+    {
+        var aliases = new AliasStore();
+        aliases.Add(new AliasPair(AliasKind.Field, "email", "username"));
+
+        Assert.Equal("allow", Outcome(Engine([Allow(key: "email")], aliases).Evaluate(Claude, OpAction.Read, new("V", "I", "username"), [], false)));
+    }
+
+    [Fact]
+    public void A_section_named_by_its_id_is_the_same_section_once_known()
+    {
+        var aliases = new AliasStore();
+        aliases.Add(new AliasPair(AliasKind.Section, "Saved on example.com", "Section_aaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        var rules = new[] { Allow(key: "Saved on example.com/First name") };
+
+        Assert.Equal("allow", Outcome(Engine(rules, aliases).Evaluate(Claude, OpAction.Read, new("V", "I", "Section_aaaaaaaaaaaaaaaaaaaaaaaaaa/First name"), [], false)));
+        Assert.Equal("prompt", Outcome(Engine(rules).Evaluate(Claude, OpAction.Read, new("V", "I", "Section_aaaaaaaaaaaaaaaaaaaaaaaaaa/First name"), [], false)));
+        Assert.Equal("deny", Outcome(Engine([Allow(), Deny(key: "Saved on example.com/First name")]).Evaluate(Claude, OpAction.Read, new("V", "I", "Section_aaaaaaaaaaaaaaaaaaaaaaaaaa/First name"), [], false)));
     }
 
     [Fact]

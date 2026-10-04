@@ -62,10 +62,12 @@ public static class RuleAdvisor
 
     private static void Add(List<RuleNotice> notices, RuleSet rules, AliasStore aliases, Rule rule, AliasKind kind, string? section, string pinned)
     {
-        var pinsId = AliasStore.LooksLikeId(pinned);
+        var pinsId = AliasStore.IsIdForm(kind, pinned);
 
-        // A built-in field such as "password" has no generated ID, so it has no other form.
-        if (kind == AliasKind.Field && !pinsId && aliases.IdsFor(kind, pinned).Count == 0 && IsBuiltInFieldId(pinned)) return;
+        // The password and notes fields carry their ID as their label, so they have no
+        // other form unless the store has seen one. (The username field is often labelled
+        // "email", so it does get a notice.)
+        if (kind == AliasKind.Field && pinned is "password" or "notesPlain" && aliases.NamesFor(kind, pinned).Count == 0) return;
 
         IReadOnlyList<string> others = [.. (pinsId ? aliases.NamesFor(kind, pinned) : aliases.IdsFor(kind, pinned)).Order(StringComparer.Ordinal)];
         if (others.Count == 0)
@@ -92,11 +94,6 @@ public static class RuleAdvisor
 
     private static Rule With(Rule rule, string? vault = null, string? item = null, string? key = null) =>
         new(rule.Caller, rule.Action, vault ?? rule.Vault, item ?? rule.Item, key ?? rule.Key, rule.Verdict, rule.CacheGrant);
-
-    // The op CLI's built-in fields carry IDs equal to their labels, so they have no
-    // second form; a custom field gets a generated ID. Check this list against real
-    // item JSON before relying on it beyond notices.
-    private static bool IsBuiltInFieldId(string label) => label.Equals("password", StringComparison.OrdinalIgnoreCase) || label.Equals("username", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Compares rules by what they match and decide, ignoring letter case in names, so

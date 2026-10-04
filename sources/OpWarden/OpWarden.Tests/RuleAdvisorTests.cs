@@ -31,10 +31,18 @@ public sealed class RuleAdvisorTests
 
     [Theory]
     [InlineData("password")]
-    [InlineData("Login/username")]
-    public void A_built_in_field_has_no_second_form(string key)
+    [InlineData("Login/notesPlain")]
+    public void The_password_and_notes_fields_have_no_second_form(string key)
     {
         Assert.Empty(Review([new Rule(Claude, null, null, null, key, Verdict.Allow)]));
+    }
+
+    [Fact]
+    public void The_username_field_gets_a_notice_because_its_label_varies()
+    {
+        var notice = Assert.Single(Review([new Rule(Claude, null, null, null, "username", Verdict.Allow)]));
+
+        Assert.Equal(NoticeKind.OtherFormUnknown, notice.Kind);
     }
 
     [Fact]

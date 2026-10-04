@@ -28,8 +28,9 @@ internal static class FieldMatcher
         : FieldMatch.No;
 
     /// <summary>
-    /// Compares a vault, an item or a field, treating a name and its ID as one value
-    /// (REQ-RULE-16, REQ-RULE-22 to REQ-RULE-24).
+    /// Compares a vault, an item, a field or a section, treating a name and its ID as one
+    /// value (REQ-RULE-16, REQ-RULE-22 to REQ-RULE-24), and two names that share an ID as
+    /// one value too (REQ-RULE-36).
     /// </summary>
     public static FieldMatch Named(string? rule, string? request, AliasKind kind, AliasStore aliases)
     {
@@ -37,9 +38,10 @@ internal static class FieldMatcher
         if (request is null) return FieldMatch.Possible;
         if (string.Equals(rule, request, StringComparison.OrdinalIgnoreCase)) return FieldMatch.Definite;
 
-        var ruleIsId = AliasStore.LooksLikeId(rule);
-        var requestIsId = AliasStore.LooksLikeId(request);
-        if (ruleIsId == requestIsId) return FieldMatch.No;
+        var ruleIsId = AliasStore.IsIdForm(kind, rule);
+        var requestIsId = AliasStore.IsIdForm(kind, request);
+        if (ruleIsId && requestIsId) return FieldMatch.No;
+        if (!ruleIsId && !requestIsId) return NamedPair(rule, request, kind, aliases);
 
         var (id, name) = ruleIsId ? (rule, request) : (request, rule);
         var namesOfId = aliases.NamesFor(kind, id);
@@ -54,10 +56,34 @@ internal static class FieldMatcher
     }
 
     /// <summary>
+    /// Two different names. They name the same value when one ID carries both, as the
+    /// op CLI's item JSON shows for a vault reported as "Personal" by one command and
+    /// "Private" by another. With nothing known, the default vault's names are still a
+    /// possible match for each other (REQ-RULE-37); other names are different values.
+    /// </summary>
+    private static FieldMatch NamedPair(string rule, string request, AliasKind kind, AliasStore aliases)
+    {
+        var ruleIds = aliases.IdsFor(kind, rule);
+        var requestIds = aliases.IdsFor(kind, request);
+        if (ruleIds.Count > 0 && requestIds.Count > 0)
+        {
+            if (!ruleIds.Overlaps(requestIds)) return FieldMatch.No;
+            return requestIds.IsSubsetOf(ruleIds) ? FieldMatch.Definite : FieldMatch.Possible;
+        }
+
+        return kind == AliasKind.Vault && DefaultVaultNames.Contains(rule) && DefaultVaultNames.Contains(request) ? FieldMatch.Possible : FieldMatch.No;
+    }
+
+    // The op CLI's own help names the default vault "Private, Personal, or Employee,
+    // depending on your account type", and one account reports the same vault ID under
+    // two of those names.
+    private static readonly HashSet<string> DefaultVaultNames = new(["Private", "Personal", "Employee"], StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Compares a key: by label or ID like <see cref="Named"/>, and with or without its
     /// section. A reference may name a field as <c>password</c> or <c>Login/password</c>,
-    /// so the same field under a different or missing section is only a possible match
-    /// (REQ-RULE-25).
+    /// and a section by its label or its ID, so the same field under a different or
+    /// missing section is only a possible match (REQ-RULE-25).
     /// </summary>
     public static FieldMatch Key(string? rule, string? request, AliasStore aliases)
     {
@@ -68,7 +94,7 @@ internal static class FieldMatcher
         var (ruleSection, ruleField) = SplitKey(rule);
         var (requestSection, requestField) = SplitKey(request);
         var field = Named(ruleField, requestField, AliasKind.Field, aliases);
-        var sameSection = string.Equals(ruleSection, requestSection, StringComparison.OrdinalIgnoreCase);
+        var sameSection = ruleSection is null ? requestSection is null : requestSection is not null && Named(ruleSection, requestSection, AliasKind.Section, aliases) == FieldMatch.Definite;
         return field == FieldMatch.Definite && !sameSection ? FieldMatch.Possible : field;
     }
 

@@ -8,11 +8,12 @@ namespace OpWarden.Core.Rules;
 /// <remarks>
 /// Reads the op CLI's JSON item shape, from <c>op item get --format json</c> (one item)
 /// or <c>op item list --format json</c> (an array): an item carries <c>id</c> and
-/// <c>title</c>, a nested <c>vault</c> object carries <c>id</c> and <c>name</c>, and each
-/// entry of a <c>fields</c> array carries <c>id</c> and <c>label</c>. Field values sit
-/// beside them in the same objects and are never read.
-/// That shape is taken from the op CLI's JSON as commonly seen, not from a documented
-/// schema; output in any other shape, human-readable included, yields no pairs. Missing
+/// <c>title</c>, a nested <c>vault</c> object carries <c>id</c> and <c>name</c>, each
+/// entry of <c>sections</c> carries <c>id</c> and <c>label</c>, and each entry of
+/// <c>fields</c> carries <c>id</c>, <c>label</c> and an optional <c>section</c>. Field
+/// values sit beside them in the same objects and are never read. The shape is the op
+/// CLI's own output, checked against op 2.38; output in any other shape, human-readable
+/// included, yields no pairs. Missing
 /// pairs cost precision only: <see cref="FieldMatcher"/> treats an unseen ID as possibly
 /// equal to any name, so deny rules do not depend on this.
 /// </remarks>
@@ -49,10 +50,16 @@ public static class AliasExtractor
 
         if (Pair(item, "title", AliasKind.Item) is { } itemPair) pairs.Add(itemPair);
         if (item.TryGetProperty("vault", out var vault) && Pair(vault, "name", AliasKind.Vault) is { } vaultPair) pairs.Add(vaultPair);
+        if (item.TryGetProperty("sections", out var sections) && sections.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var section in sections.EnumerateArray())
+            {
+                if (Pair(section, "label", AliasKind.Section) is { } sectionPair) pairs.Add(sectionPair);
+            }
+        }
+
         if (item.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Array)
         {
-            // Built-in fields have IDs like "password" that equal their labels; only the
-            // generated IDs of custom fields make a pair worth keeping.
             foreach (var field in fields.EnumerateArray())
             {
                 if (Pair(field, "label", AliasKind.Field) is { } fieldPair) pairs.Add(fieldPair);
@@ -68,6 +75,8 @@ public static class AliasExtractor
 
         var idValue = id.GetString()!;
         var nameValue = name.GetString()!;
-        return AliasStore.LooksLikeId(idValue) && nameValue.Length > 0 ? new AliasPair(kind, nameValue, idValue) : null;
+        // A built-in field whose label equals its ID ("password") has no second form.
+        var distinct = !string.Equals(idValue, nameValue, StringComparison.OrdinalIgnoreCase);
+        return AliasStore.IsIdForm(kind, idValue) && nameValue.Length > 0 && distinct ? new AliasPair(kind, nameValue, idValue) : null;
     }
 }

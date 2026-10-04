@@ -59,7 +59,7 @@ An `op://<vault>/<item>/<field>` string in an argument, in an environment variab
 Do not use: op URI, ref.
 
 ### alias pair (noun)
-A vault name, an item name, or a field label, together with the UUID that names the same vault, item, or field.
+A vault name, an item name, a section label, or a field label, together with the UUID that names the same vault, item, section, or field.
 Do not use: mapping, alias (alone).
 
 ### request tuple (noun)
@@ -344,6 +344,14 @@ REQ-RULE-27: For a `run` invocation whose secret references are unknown, the bro
 
 REQ-RULE-28: When two matching `allow` rules tie on specificity, the broker MUST apply the rule with the shorter cache grant, and a rule without a cache grant is the shortest.
 
+**Item-JSON decision (2026-10-04):** real `op item get` and `op item list` output, provided by Tamás, showed three things the matching rules had to absorb. The built-in fields carry fixed IDs (`username`, `password`, `notesPlain`) that need not equal their labels: the `username` field was labelled `email`. Sections carry IDs of the form `Section_…`. And one vault ID appeared as "Personal" in `op item get` and as "Private" in `op item list`.
+
+REQ-RULE-35: The broker MUST treat the following values as UUIDs under REQ-RULE-23 and REQ-RULE-24: a 26-character lowercase alphanumeric value, a built-in field ID (`username`, `password`, `notesPlain`) in the key, and a value that starts with `Section_` in the section part of a key.
+
+REQ-RULE-36: When the broker compares two different names, and the broker stores at least one alias pair for each, the comparison MUST be a match when each UUID of the request-tuple name also carries the rule's name, a possible match when the two names share at least one UUID, and no match otherwise.
+
+REQ-RULE-37: When the broker compares two different vault names, and the broker stores no alias pair for at least one of them, and both names are among `Private`, `Personal`, and `Employee`, the comparison MUST be a possible match. The reason is that the op CLI names the default vault with each of these names, depending on the account type and on the command.
+
 ### 7.2 Rule notices
 
 **Notice decision (2026-10-03):** OpWarden tells the user about each rule that pins a vault, an item, or a key by only one of its two forms, name or UUID, and offers the rule for the other form when the broker knows it. Tamás asked for this after REQ-RULE-23 left one visible effect: an `allow` rule that pins one form prompts for the other form until the broker sees the alias pair. A `deny` rule needs no such notice, because REQ-RULE-23 already denies an unseen UUID.
@@ -535,7 +543,8 @@ Rollback:
 - Integrity in the console broker: the console broker runs as the interactive user, so the integrity key of REQ-INT-2 and the in-memory key of REQ-INT-6 are within that user's reach. A process that decrypts the vault, or reads the in-memory key from broker memory, can forge a seal. Section 8.1 targets file edits and memory edits, and the service account is what puts the keys out of reach.
 - Dropped process-creation events: a dropped event leaves one caller unresolvable for as long as that caller runs, and REQ-CALL-18 then classifies it as `unknown`. The failure is a prompt the interactive user cannot clear, and the failure is not a wrong verdict. The reliability spike measured no drop at 402 process starts per second, which is roughly two orders of magnitude above a normal machine. REQ-CALL-3 keeps the consumer cheap, because a slow consumer is the documented cause of drops.
 - Ancestry that predates the broker: REQ-CALL-5 seeds the map from a snapshot, and a snapshot cannot recover a parent that exited before the snapshot. A process whose recorded parent already exited at broker start therefore resolves no further than itself. The gap closes as processes cycle, and the gap reopens at every broker restart.
-- Built-in field list: REQ-RULE-29 exempts built-in fields from notices, and the implementation recognises `password` and `username` as built-in. A built-in field outside that list gets a notice that it does not need.
+- Built-in field list: REQ-RULE-35 knows three built-in field IDs, taken from op CLI 2.38 output. A built-in field outside that list is matched as a label only, so a `deny` rule that pins its label misses a reference that names it by its ID. REQ-RULE-29 exempts `password` and `notesPlain` from notices, because their labels usually equal their IDs.
+- Over-broad deny on built-in fields: under REQ-RULE-23 and REQ-RULE-35, a `deny` rule that pins a key such as `password` is a possible match for every label of a field the broker has not seen, until the item's field list reaches the broker. The failure is a `deny` the user did not intend, not an `allow`.
 - Machine-wide process observation: the broker sees every process start on the machine for as long as the broker runs. REQ-CALL-4 keeps that record in memory and off both the disk and the audit log, so the exposure is bounded by broker memory, which section 16 already grants to an elevated attacker.
 
 ## 17. Open decisions

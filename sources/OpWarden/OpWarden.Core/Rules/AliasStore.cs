@@ -8,6 +8,7 @@ public enum AliasKind
     Vault,
     Item,
     Field,
+    Section,
 }
 
 /// <summary>
@@ -136,6 +137,25 @@ public sealed class AliasStore
     /// <c>q1w2e3r4t5y6u7i8o9p0a1s2d3</c>.
     /// </summary>
     public static bool LooksLikeId(string value) => value.Length == 26 && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c));
+
+    /// <summary>
+    /// True when a value is the ID form of a vault, item, field or section rather than its
+    /// name. Built-in fields carry fixed IDs that are not generated: <c>username</c>,
+    /// <c>password</c> and <c>notesPlain</c>, and the <c>username</c> field is often
+    /// labelled <c>email</c>. Section IDs read <c>Section_…</c>. (From the op CLI's item
+    /// JSON, op 2.38; REQ-RULE-35.)
+    /// </summary>
+    public static bool IsIdForm(AliasKind kind, string value) => kind switch
+    {
+        AliasKind.Field => LooksLikeId(value) || BuiltInFieldIds.Contains(value),
+        AliasKind.Section => LooksLikeId(value) || value.StartsWith("Section_", StringComparison.Ordinal),
+        _ => LooksLikeId(value),
+    };
+
+    /// <summary>
+    /// The IDs of the fields every login item has.
+    /// </summary>
+    public static IReadOnlySet<string> BuiltInFieldIds { get; } = new HashSet<string>(["username", "password", "notesPlain"], StringComparer.OrdinalIgnoreCase);
 
     private static string Normalize(string name) => name.ToUpperInvariant();
 
