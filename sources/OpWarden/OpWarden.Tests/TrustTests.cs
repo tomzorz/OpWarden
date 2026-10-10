@@ -121,6 +121,32 @@ public sealed partial class TrustTests
     }
 
     [Fact]
+    public async Task The_status_names_the_data_directory_the_session_agent_may_read()
+    {
+        await using var broker = BrokerHarness.Start(Claude);
+        broker.Cache.Put(new("claude-code", "read"), "secret"u8, CacheTtl.FifteenMinutes);
+
+        var status = (await broker.ManageAsync(new GetStatus())).Status!;
+
+        Assert.Equal(broker.DataDirectory, status.DataDirectory);
+        Assert.Equal(1, status.CacheEntries);
+        Assert.False(status.ProcessEventsAvailable);
+        Assert.Contains(Environment.UserName, status.Account, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Listed_rules_carry_their_notices()
+    {
+        // An allow rule pinning an item by name, whose ID the broker has never seen, prompts
+        // for the ID form: REQ-RULE-29's notice.
+        await using var broker = BrokerHarness.Start(Claude, [new Rule(Claude, OpAction.Read, "Vault", "GitHub", null, Verdict.Allow)]);
+
+        var response = await broker.ManageAsync(new ListRules());
+
+        Assert.Contains(response.Notices!, n => n.Field == AliasKind.Item && n.PinnedValue == "GitHub" && n.Kind == NoticeKind.OtherFormUnknown);
+    }
+
+    [Fact]
     public async Task A_rule_change_takes_an_elevated_administrator()
     {
         await using var broker = BrokerHarness.Start(Claude);

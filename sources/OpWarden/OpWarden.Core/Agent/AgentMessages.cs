@@ -25,8 +25,8 @@ public sealed record RuleScope(bool Caller, bool Action, bool Vault, bool Item, 
 
 /// <summary>
 /// A message between the broker and the session agent. The broker sends prompts,
-/// closes them, sends notices, and refuses a connection it will not pin; the session
-/// agent sends decisions and lock events.
+/// closes them, sends notices, reports reads it let through without asking, and refuses
+/// a connection it will not pin; the session agent sends decisions and lock events.
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(ShowPrompt), "show-prompt")]
@@ -35,6 +35,7 @@ public sealed record RuleScope(bool Caller, bool Action, bool Vault, bool Item, 
 [JsonDerivedType(typeof(DecisionMade), "decision")]
 [JsonDerivedType(typeof(WorkstationLocked), "workstation-locked")]
 [JsonDerivedType(typeof(AgentRefused), "agent-refused")]
+[JsonDerivedType(typeof(ReadAllowed), "read-allowed")]
 public abstract record AgentMessage;
 
 /// <summary>
@@ -81,3 +82,20 @@ public sealed record WorkstationLocked : AgentMessage;
 /// after this message.
 /// </summary>
 public sealed record AgentRefused(string Reason) : AgentMessage;
+
+/// <summary>
+/// How a read got through without a prompt.
+/// </summary>
+public enum ReadSource
+{
+    Cache,
+    Rule,
+}
+
+/// <summary>
+/// A read the broker let through without asking: answered from the cache, or allowed by a
+/// stored rule just before the op CLI runs (REQ-CACHE-16, REQ-RULE-38).
+/// </summary>
+/// <param name="Paths">The secret paths read: one for <c>op read</c>, one per reference for <c>op run</c> and <c>op inject</c>.</param>
+/// <param name="CacheExpires">For a cached answer, when its cache entry expires.</param>
+public sealed record ReadAllowed(CallerIdentity Caller, string? Command, IReadOnlyList<SecretPath> Paths, ReadSource Source, DateTimeOffset? CacheExpires, DateTimeOffset At) : AgentMessage;

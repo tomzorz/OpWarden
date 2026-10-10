@@ -1,0 +1,102 @@
+<Window x:Class="OpWarden.SessionAgent.PromptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:OpWarden.SessionAgent"
+        Title="OpWarden"
+        AutomationProperties.AutomationId="PromptWindow"
+        Width="560" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowActivated="False" ShowInTaskbar="True"
+        WindowStartupLocation="Manual" UseLayoutRounding="True">
+    <!-- The margin is room for the frame's shadow. -->
+    <Grid Margin="16">
+        <local:WindowFrame>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Header: drag to move; the cross is disallow-once. -->
+                <Grid x:Name="Header" Background="Transparent" MouseLeftButtonDown="OnHeaderMouseDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Path Width="18" Height="20" Stretch="Uniform" VerticalAlignment="Center" Fill="{DynamicResource BrokerConnectedBrush}"
+                          Data="M 8,0 L 16,3 L 16,8 C 16,13 12,16.5 8,18 C 4,16.5 0,13 0,8 L 0,3 Z" />
+                    <local:PromptTitleText x:Name="TitleText" Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" />
+                    <local:HintText x:Name="CountdownText" Grid.Column="2" VerticalAlignment="Center" AutomationProperties.AutomationId="Countdown" />
+                    <local:WindowCloseButton Grid.Column="3" Margin="10,0,-6,0" VerticalAlignment="Center" Click="OnCloseClick" />
+                </Grid>
+
+                <local:SecretValueText x:Name="CommandText" Grid.Row="1" Margin="30,4,0,0" />
+
+                <!-- The request tuple: one row per field, with its pin when always- decisions are offered. -->
+                <Border Grid.Row="2" Margin="0,14,0,0" Padding="14,10" CornerRadius="8" Background="{DynamicResource RequestPanelBackgroundBrush}">
+                    <ItemsControl x:Name="FieldList" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,3">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="96" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <local:FieldPinCheckBox Content="{Binding Label}" IsChecked="{Binding IsPinned}" IsEnabled="{Binding Pinnable}"
+                                                            Visibility="{Binding PinVisibility}" AutomationProperties.AutomationId="{Binding PinAutomationId}"
+                                                            ToolTip="Pinned in an always- rule; unpinned matches anything" />
+                                    <local:FieldLabelText Text="{Binding Label}" Visibility="{Binding LabelVisibility}" />
+                                    <local:SecretValueText Grid.Column="1" Text="{Binding Value}" ToolTip="{Binding Value}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Border>
+
+                <!-- A run lists every reference it uses. -->
+                <StackPanel x:Name="ReferencesPanel" Grid.Row="3" Margin="0,12,0,0">
+                    <local:SectionHeadingText Text="Secret references" />
+                    <ItemsControl x:Name="ReferenceList" Margin="0,4,0,0" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <local:SecretValueText Margin="0,1" Text="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <local:HintText x:Name="ReferencesNoteText" Margin="0,4,0,0" />
+                </StackPanel>
+
+                <local:HintText x:Name="PinHintText" Grid.Row="4" Margin="0,10,0,0"
+                                Text="Checked fields are pinned in an always- rule; unchecked fields match anything." />
+
+                <!-- REQ-RULE-19: how long an allowed read's output may be served from the cache. -->
+                <StackPanel x:Name="CachePanel" Grid.Row="5" Margin="0,14,0,0">
+                    <local:SectionHeadingText Text="Cache the output" />
+                    <StackPanel x:Name="CacheChoices" Margin="0,6,0,0" Orientation="Horizontal" />
+                </StackPanel>
+
+                <!-- Allow on the left, refuse on the right; none of them is the default. -->
+                <Grid Grid.Row="6" Margin="0,18,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <local:AllowDecisionButton x:Name="AllowOnceButton" Content="Allow once" AutomationProperties.AutomationId="AllowOnceButton" Click="OnAllowOnceClick" />
+                    <local:AllowDecisionButton x:Name="AlwaysAllowButton" Grid.Column="1" Margin="8,0,0,0" Content="Always allow" AutomationProperties.AutomationId="AlwaysAllowButton" Click="OnAlwaysAllowClick" />
+                    <local:DenyDecisionButton x:Name="DisallowOnceButton" Grid.Column="3" Content="Disallow once" AutomationProperties.AutomationId="DisallowOnceButton" Click="OnDisallowOnceClick" />
+                    <local:DenyDecisionButton x:Name="AlwaysDisallowButton" Grid.Column="4" Margin="8,0,0,0" Content="Always disallow" AutomationProperties.AutomationId="AlwaysDisallowButton" Click="OnAlwaysDisallowClick" />
+                </Grid>
+            </Grid>
+        </local:WindowFrame>
+    </Grid>
+</Window>

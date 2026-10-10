@@ -3,10 +3,23 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWPF>true</UseWPF>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <PublishAot>true</PublishAot>
 
-    <!-- Common controls v6 (visual styles) and per-monitor DPI awareness. -->
+    <!-- Main lives in Program.cs: the agent picks its mode from the arguments first. -->
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+
+    <!--
+      Spec section 3: WPF rules out NativeAOT, so the session agent ships self-contained
+      (install/publish.ps1). It then loads no shared runtime that DOTNET_ROOT could
+      redirect, and with startup hooks off no environment variable can load code into it.
+    -->
+    <StartupHookSupport>false</StartupHookSupport>
+
+    <!-- WPF's font cache builds real cultures; invariant mode throws on every text layout. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+
+    <!-- Per-monitor DPI awareness. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 

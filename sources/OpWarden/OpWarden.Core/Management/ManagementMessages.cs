@@ -5,8 +5,9 @@ using OpWarden.Core.Rules;
 namespace OpWarden.Core.Management;
 
 /// <summary>
-/// A request from the management window. Reading the rules and flushing the cache take
-/// any connection; a rule mutation takes an elevated Administrators token (REQ-TRUST-5).
+/// A request from the management window. Reading the rules and the status, and flushing
+/// the cache, take any connection; a rule mutation takes an elevated Administrators token
+/// (REQ-TRUST-5).
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(ListRules), "list-rules")]
@@ -14,6 +15,7 @@ namespace OpWarden.Core.Management;
 [JsonDerivedType(typeof(RemoveRule), "remove-rule")]
 [JsonDerivedType(typeof(SetPromptAlways), "set-prompt-always")]
 [JsonDerivedType(typeof(FlushCache), "flush-cache")]
+[JsonDerivedType(typeof(GetStatus), "get-status")]
 public abstract record ManagementRequest
 {
     /// <summary>
@@ -50,11 +52,27 @@ public sealed record FlushCache : ManagementRequest
 }
 
 /// <summary>
-/// The broker's answer: the rules as they stand after the request, or why the request
-/// was refused.
+/// What the broker is doing: for the session agent's status view, and so the agent can
+/// find the audit log it is allowed to read (REQ-TRUST-2).
+/// </summary>
+public sealed record GetStatus : ManagementRequest
+{
+    public override bool MutatesRules => false;
+}
+
+/// <param name="DataDirectory">Where the rule store and the audit log live.</param>
+/// <param name="Account">The account the broker runs as: the service account when installed, the user in a console.</param>
+/// <param name="ProcessEventsAvailable">False when the broker resolves callers by the live walk alone (REQ-CALL-20).</param>
+/// <param name="CacheEntries">Values cached right now.</param>
+public sealed record BrokerStatus(string DataDirectory, string Account, bool ProcessEventsAvailable, int CacheEntries, DateTimeOffset StartedAt, string Version);
+
+/// <summary>
+/// The broker's answer: the rules as they stand after the request with their notices, the
+/// status, or why the request was refused.
 /// </summary>
 /// <param name="Flushed">The number of cache entries a <see cref="FlushCache"/> deleted.</param>
-public sealed record ManagementResponse(string? Error, RuleSet? Rules = null, int? Flushed = null);
+/// <param name="Notices">The rule notices of REQ-RULE-29 to REQ-RULE-31, beside the rules they are about.</param>
+public sealed record ManagementResponse(string? Error, RuleSet? Rules = null, int? Flushed = null, BrokerStatus? Status = null, IReadOnlyList<RuleNotice>? Notices = null);
 
 /// <summary>
 /// The broker–management window conversation: a request, a response, repeated for as

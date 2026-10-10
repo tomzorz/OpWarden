@@ -1,0 +1,69 @@
+<!--
+  The light palette: the same keys as Palette.Dark.xaml, which documents them.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Surfaces -->
+    <SolidColorBrush x:Key="WindowBackdropBrush" Color="#FBFBFC" />
+    <SolidColorBrush x:Key="WindowFrameBorderBrush" Color="#D4D5DB" />
+    <SolidColorBrush x:Key="RequestPanelBackgroundBrush" Color="#F1F2F5" />
+    <SolidColorBrush x:Key="ToastBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="MenuBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="MenuHighlightBrush" Color="#E8EAF0" />
+    <Color x:Key="WindowShadowColor">#55000000</Color>
+
+    <!-- Text -->
+    <SolidColorBrush x:Key="PrimaryTextBrush" Color="#1B1C21" />
+    <SolidColorBrush x:Key="SecondaryTextBrush" Color="#5F616B" />
+    <SolidColorBrush x:Key="SecretValueTextBrush" Color="#7A5410" />
+    <SolidColorBrush x:Key="CountdownUrgentTextBrush" Color="#B8381F" />
+    <SolidColorBrush x:Key="ErrorTextBrush" Color="#B8381F" />
+
+    <!-- Prompt decisions -->
+    <SolidColorBrush x:Key="AllowDecisionBackgroundBrush" Color="#237344" />
+    <SolidColorBrush x:Key="AllowDecisionHoverBrush" Color="#1C5E37" />
+    <SolidColorBrush x:Key="AllowDecisionForegroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="DenyDecisionBackgroundBrush" Color="#A3343A" />
+    <SolidColorBrush x:Key="DenyDecisionHoverBrush" Color="#872A30" />
+    <SolidColorBrush x:Key="DenyDecisionForegroundBrush" Color="#FFFFFF" />
+
+    <!-- Secondary commands -->
+    <SolidColorBrush x:Key="CommandBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="CommandHoverBrush" Color="#ECEDF1" />
+    <SolidColorBrush x:Key="CommandBorderBrush" Color="#C9CAD2" />
+    <SolidColorBrush x:Key="CommandForegroundBrush" Color="#1B1C21" />
+    <SolidColorBrush x:Key="AdministratorGlyphBrush" Color="#A8770E" />
+
+    <!-- Inputs -->
+    <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="InputBorderBrush" Color="#C9CAD2" />
+    <SolidColorBrush x:Key="SelectedChoiceBackgroundBrush" Color="#2F5FAE" />
+    <SolidColorBrush x:Key="SelectedChoiceForegroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PinCheckGlyphBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="PinCheckedBackgroundBrush" Color="#2F5FAE" />
+    <SolidColorBrush x:Key="FocusOutlineBrush" Color="#2F6FE0" />
+
+    <!-- Where a read came from, and notices -->
+    <SolidColorBrush x:Key="CachedReadAccentBrush" Color="#1F86B8" />
+    <SolidColorBrush x:Key="RuleReadAccentBrush" Color="#6A5BD8" />
+    <SolidColorBrush x:Key="NoticeAccentBrush" Color="#C7860F" />
+
+    <!-- Broker state -->
+    <SolidColorBrush x:Key="BrokerConnectedBrush" Color="#228B52" />
+    <SolidColorBrush x:Key="BrokerWaitingBrush" Color="#7E7F89" />
+    <SolidColorBrush x:Key="BrokerRefusedBrush" Color="#C23B36" />
+
+    <!-- Record grids -->
+    <SolidColorBrush x:Key="GridHeaderBackgroundBrush" Color="#F1F2F5" />
+    <SolidColorBrush x:Key="GridRowBackgroundBrush" Color="#FBFBFC" />
+    <SolidColorBrush x:Key="GridAlternateRowBackgroundBrush" Color="#F4F5F7" />
+    <SolidColorBrush x:Key="GridSelectedRowBackgroundBrush" Color="#D9E4F7" />
+    <SolidColorBrush x:Key="GridSeparatorBrush" Color="#E2E3E8" />
+    <SolidColorBrush x:Key="DeniedVerdictTextBrush" Color="#B8381F" />
+    <SolidColorBrush x:Key="CachedReasonTextBrush" Color="#16719C" />
+
+    <!-- Scrollbars -->
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#C3C4CC" />
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#A9AAB3" />
+</ResourceDictionary>

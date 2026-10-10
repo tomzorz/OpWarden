@@ -27,7 +27,8 @@ if (-not $WhatIfPreference -and -not (Test-Administrator)) {
     throw 'Run uninstall.ps1 from an elevated PowerShell, or add -WhatIf to list what it would do.'
 }
 
-$agent = Join-Path $InstallDirectory 'OpWarden.SessionAgent.exe'
+$agent = Join-Path $InstallDirectory 'agent\OpWarden.SessionAgent.exe'
+$singleFileAgent = Join-Path $InstallDirectory 'OpWarden.SessionAgent.exe'
 $shimDirectory = Join-Path $InstallDirectory 'shim'
 $state = Read-InstallState (Join-Path $InstallDirectory 'install-state.json')
 if (-not $state) { Write-Warning 'No install-state.json: the provider grant and the group membership cannot be reverted from the record; the rest is removed where found.' }
@@ -67,7 +68,10 @@ if ($service -and $PSCmdlet.ShouldProcess($ServiceName, 'Delete the service')) {
 if ((Get-ItemProperty -Path $RunKey -Name $ServiceName -ErrorAction SilentlyContinue) -and $PSCmdlet.ShouldProcess("$RunKey\$ServiceName", 'Remove the logon entry')) {
     Remove-ItemProperty -Path $RunKey -Name $ServiceName
 }
-if ($PSCmdlet.ShouldProcess($agent, 'Stop the session agent')) { Stop-SessionAgent $agent }
+if ($PSCmdlet.ShouldProcess($agent, 'Stop the session agent')) {
+    Stop-SessionAgent $agent
+    Stop-SessionAgent $singleFileAgent
+}
 
 # 5. The executables, broker.json and the install record.
 if ((Test-Path $InstallDirectory) -and $PSCmdlet.ShouldProcess($InstallDirectory, 'Delete the install directory')) {

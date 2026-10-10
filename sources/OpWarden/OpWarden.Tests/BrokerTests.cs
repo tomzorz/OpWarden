@@ -23,6 +23,10 @@ public sealed class BrokerTests
 
         Assert.Equal(0, run.ExitCode);
         Assert.Equal("value", run.Stdout);
+        // No prompt; only the toast that names the read (REQ-RULE-38).
+        var allowed = await agent.NextAsync<ReadAllowed>();
+        Assert.Equal(ReadSource.Rule, allowed.Source);
+        Assert.Equal([new SecretPath("v", "i", "f")], allowed.Paths);
         Assert.False(agent.TryPeek(out _));
         var entry = Assert.Single(broker.AuditEntries("invocation"));
         Assert.Equal("invocation", entry.GetProperty("event").GetString());

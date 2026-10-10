@@ -82,7 +82,18 @@ public sealed class BrokerHost : IAsyncDisposable
         var prompts = new PromptQueue(10, options.PromptTimeout, _agent.Send);
         broker = new BrokerService(new BrokerSettings(options.OpPath), Rules, Aliases, aliasFile, _audit, prompts, Cache, alarm, _agent.Send, resolveCaller);
         _shims = new ShimPipeServer(options.Pipes.Shim, options.User, broker.DecideAsync, (request, capture, _) => broker.CaptureReceivedAsync(request, capture), options.ConnectionFailed);
-        _management = new ManagementServer(options.Pipes.Management, options.User, Rules, Cache, _audit, options.ConnectionFailed);
+        var startedAt = DateTimeOffset.UtcNow;
+        var account = CurrentAccount();
+        var version = typeof(BrokerHost).Assembly.GetName().Version?.ToString() ?? "?";
+        _management = new ManagementServer(
+            options.Pipes.Management,
+            options.User,
+            Rules,
+            Aliases,
+            Cache,
+            _audit,
+            () => new BrokerStatus(data, account, _callers?.ReceivesEvents ?? false, Cache.Count, startedAt, version),
+            options.ConnectionFailed);
 
         try
         {
@@ -114,6 +125,12 @@ public sealed class BrokerHost : IAsyncDisposable
         Cache.Dispose();
         _callers?.Dispose();
         _audit.Dispose();
+    }
+
+    private static string CurrentAccount()
+    {
+        using var self = WindowsIdentity.GetCurrent();
+        return self.Name;
     }
 
     /// <summary>

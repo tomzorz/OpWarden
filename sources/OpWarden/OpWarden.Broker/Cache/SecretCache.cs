@@ -75,11 +75,17 @@ public sealed class SecretCache : IDisposable
     /// <summary>
     /// The cached output, or null on a miss, an expired entry, or one that failed its seal.
     /// </summary>
-    public byte[]? TryGet(CacheKey key)
+    public byte[]? TryGet(CacheKey key) => TryGet(key, out _);
+
+    /// <inheritdoc cref="TryGet(CacheKey)"/>
+    /// <param name="expires">When the entry expires, for a hit.</param>
+    public byte[]? TryGet(CacheKey key, out DateTimeOffset expires)
     {
+        expires = default;
         lock (_lock)
         {
             if (!_entries.TryGetValue(key, out var entry)) return null;
+            expires = entry.Expires;
             if (entry.Expires <= _now())
             {
                 Evict(key);

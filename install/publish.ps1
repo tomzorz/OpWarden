@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-Builds the shim, the broker and the session agent as NativeAOT executables (spec section 14, step 1).
+Builds the shim and the broker as NativeAOT executables and the session agent as a
+self-contained WPF app (spec section 14, step 1).
 
 .DESCRIPTION
 Run unelevated: a build as an administrator leaves files in bin and obj that a later
@@ -8,7 +9,7 @@ unelevated build cannot overwrite. The result lands in artifacts\publish, laid o
 install.ps1 expects:
 
   artifacts\publish\OpWarden.Broker.exe
-  artifacts\publish\OpWarden.SessionAgent.exe
+  artifacts\publish\agent\OpWarden.SessionAgent.exe   (and the runtime beside it)
   artifacts\publish\shim\op.exe
 #>
 [CmdletBinding()]
@@ -32,18 +33,20 @@ if ((Test-Path (Join-Path $installer 'vswhere.exe')) -and -not (($env:Path -spli
 
 if (Test-Path $Output) { Remove-Item $Output -Recurse -Force }
 
+# The session agent is WPF, which NativeAOT cannot compile: it ships with its own runtime,
+# ReadyToRun so it starts quickly at logon.
 $projects = @(
-    @{ Project = 'OpWarden.Broker'; Target = $Output },
-    @{ Project = 'OpWarden.SessionAgent'; Target = $Output },
-    @{ Project = 'OpWarden.Shim'; Target = (Join-Path $Output 'shim') }
+    @{ Project = 'OpWarden.Broker'; Target = $Output; Extra = @() },
+    @{ Project = 'OpWarden.SessionAgent'; Target = (Join-Path $Output 'agent'); Extra = @('--self-contained', '-p:PublishReadyToRun=true') },
+    @{ Project = 'OpWarden.Shim'; Target = (Join-Path $Output 'shim'); Extra = @() }
 )
 foreach ($p in $projects) {
     Write-Host "Publishing $($p.Project) to $($p.Target)"
-    dotnet publish (Join-Path $solution $p.Project) -c Release -o $p.Target --nologo -v quiet
+    dotnet publish (Join-Path $solution $p.Project) -c Release -o $p.Target --nologo -v quiet @($p.Extra)
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish $($p.Project) failed with exit code $LASTEXITCODE." }
 }
 
-foreach ($exe in 'OpWarden.Broker.exe', 'OpWarden.SessionAgent.exe', 'shim\op.exe') {
+foreach ($exe in 'OpWarden.Broker.exe', 'agent\OpWarden.SessionAgent.exe', 'shim\op.exe') {
     $path = Join-Path $Output $exe
     if (-not (Test-Path $path)) { throw "Publishing finished but $path is missing." }
 }

@@ -48,6 +48,24 @@ public sealed class CacheFlowTests : IDisposable
         Assert.Equal("s3cret\n", second.Stdout);
         Assert.False(ProbeRan());
         Assert.Equal("cache", broker.AuditEntries("invocation")[^1].GetProperty("reason").GetString());
+
+        // The served read is named on screen, with when its entry runs out (REQ-CACHE-16).
+        var allowed = await agent.SkipToAsync<ReadAllowed>();
+        Assert.Equal(ReadSource.Cache, allowed.Source);
+        Assert.Equal(Claude, allowed.Caller);
+        Assert.Equal([new SecretPath("V", "I", "K")], allowed.Paths);
+        Assert.InRange(allowed.CacheExpires!.Value, DateTimeOffset.UtcNow.AddMinutes(55), DateTimeOffset.UtcNow.AddMinutes(61));
+    }
+
+    [Fact]
+    public async Task A_rule_allowed_invocation_that_reads_no_secret_raises_no_toast()
+    {
+        await using var broker = BrokerHarness.Start(Claude, [new Rule(Claude, OpAction.Meta, null, null, null, Verdict.Allow)]);
+        await using var agent = await broker.ConnectAgentAsync();
+
+        Assert.Equal(0, (await broker.RunShimAsync(["--version"])).ExitCode);
+
+        Assert.False(agent.TryPeek(out _));
     }
 
     [Fact]
@@ -145,6 +163,7 @@ public sealed class CacheFlowTests : IDisposable
         await using var agent = await broker.ConnectAgentAsync();
         await broker.RunShimAsync(["read", "op://V/I/K"], Probe("s3cret"));
         await WaitUntilAsync(() => broker.Cache.Count == 1);
+        await agent.NextAsync<ReadAllowed>();
 
         broker.Rules.SetPromptAlways("V", true);
         var run = broker.RunShimAsync(["read", "op://V/I/K"]);

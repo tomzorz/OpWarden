@@ -55,9 +55,11 @@ internal sealed class BrokerService(
         // prompt would offer every decision. A deny rule, an unknown caller and a
         // prompt-always vault each outrank a cache entry.
         var cacheMayAnswer = evaluation is RuleVerdict { Verdict: Verdict.Allow } or PromptNeeded { Options: PromptOptions.AllDecisions };
-        if (cacheKey is not null && cacheMayAnswer && cache.TryGet(cacheKey) is { } cached)
+        if (cacheKey is not null && cacheMayAnswer && cache.TryGet(cacheKey, out var expires) is { } cached)
         {
-            return TryAudit(resolution, request, Verdict.Allow, VerdictReason.Cache) is { } failure ? failure : VerdictResponse.FromCache(cached);
+            if (TryAudit(resolution, request, Verdict.Allow, VerdictReason.Cache) is { } failure) return failure;
+            notify(new ReadAllowed(caller, request.Command, PathsOf(request), ReadSource.Cache, expires, DateTimeOffset.UtcNow));
+            return VerdictResponse.FromCache(cached);
         }
 
         var outcome = evaluation switch
@@ -69,6 +71,13 @@ internal sealed class BrokerService(
 
         if (TryAudit(resolution, request, outcome.Verdict, outcome.Reason) is { } auditFailure) return auditFailure;
         if (outcome.Verdict == Verdict.Deny) return VerdictResponse.Deny(outcome.Message);
+
+        // REQ-RULE-38: a read a rule lets through gets named on screen, just before the op
+        // CLI's own biometric prompt, which cannot say what it is for.
+        if (outcome.Reason == VerdictReason.Rule && request.Action is OpAction.Read or OpAction.Run)
+        {
+            notify(new ReadAllowed(caller, request.Command, PathsOf(request), ReadSource.Rule, null, DateTimeOffset.UtcNow));
+        }
 
         if (cacheKey is not null && outcome.Grant is { } ttl) _grants.AddOrUpdate(request, new Grant(cacheKey, ttl));
         return VerdictResponse.RunOp(settings.OpPath);
@@ -110,6 +119,13 @@ internal sealed class BrokerService(
         var flushed = cache.Flush();
         audit.Append(new AuditEntry(DateTimeOffset.UtcNow, "cache-flush", Detail: $"The workstation locked; {flushed} cache entries deleted."));
     }
+
+    /// <summary>
+    /// The secret paths an invocation reads: its references when it names any (a run, an
+    /// inject), else its one path.
+    /// </summary>
+    private static IReadOnlyList<SecretPath> PathsOf(ShimRequest request) =>
+        request.SecretReferences.Count > 0 ? request.SecretReferences : [request.Path];
 
     /// <summary>
     /// True for the invocations REQ-CACHE-10 lets the cache hold: an <c>op read</c> whose

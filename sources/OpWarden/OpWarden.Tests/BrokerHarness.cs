@@ -86,11 +86,20 @@ internal sealed class BrokerHarness : IAsyncDisposable
     public Task<ShimRun> RunShimAsync(IEnumerable<string> args, IReadOnlyDictionary<string, string>? environment = null) =>
         ShimHarness.RunShimAsync(ShimPipeName, args, environment);
 
+    /// <summary>
+    /// Connects a session agent and returns once the broker has pinned or refused it. The
+    /// broker resends the prompt on screen when it pins, so a prompt raised before the pin
+    /// would otherwise arrive twice.
+    /// </summary>
     public async Task<TestAgent> ConnectAgentAsync()
     {
+        int Settled() => AuditEntries("agent-pinned").Count + AuditEntries("agent-refused").Count;
+        var before = Settled();
         var pipe = new NamedPipeClientStream(".", AgentPipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await pipe.ConnectAsync(5000);
-        return new TestAgent(pipe);
+        var agent = new TestAgent(pipe);
+        for (var i = 0; i < 250 && Settled() == before; i++) await Task.Delay(20);
+        return agent;
     }
 
     /// <summary>
@@ -161,6 +170,18 @@ internal sealed class TestAgent : IAsyncDisposable
     {
         var message = await _received.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15));
         return Assert.IsType<T>(message);
+    }
+
+    /// <summary>
+    /// The next <typeparamref name="T"/>, skipping whatever the broker sent before it.
+    /// </summary>
+    public async Task<T> SkipToAsync<T>()
+        where T : AgentMessage
+    {
+        while (true)
+        {
+            if (await _received.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(15)) is T match) return match;
+        }
     }
 
     public bool TryPeek(out AgentMessage? message) => _received.Reader.TryPeek(out message);

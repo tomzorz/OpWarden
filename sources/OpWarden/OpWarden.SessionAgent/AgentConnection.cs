@@ -1,3 +1,4 @@
+using System.IO;
 using System.IO.Pipes;
 using System.Threading.Channels;
 using OpWarden.Core.Agent;
@@ -45,7 +46,6 @@ internal sealed class AgentConnection(string pipeName, Action<AgentMessage> rece
                     {
                         AgentLog.Write($"the broker refused this session agent: {refused.Reason}");
                         delay = RefusedRetryDelay;
-                        continue;
                     }
 
                     received(message);

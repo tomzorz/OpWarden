@@ -31,7 +31,7 @@ Each of the three named pipes the broker serves: the shim pipe, which shims conn
 Do not use: OpWarden pipe, broker socket.
 
 ### session agent (noun)
-The unprivileged OpWarden process in the interactive user's logon session that renders prompts, notifications, and the management window.
+The unprivileged OpWarden process in the interactive user's logon session that renders prompts, notifications, the management window, and views of the broker's status and of the audit log.
 Do not use: UI, tray app, agent (alone).
 
 ### service account (noun)
@@ -39,7 +39,7 @@ The dedicated Windows account that runs the broker: the virtual account `NT SERV
 Do not use: broker account.
 
 ### management window (noun)
-The part of the session agent that lists, edits, and deletes rules, and that flushes the cache.
+The session agent's window that lists the stored rules with their notices, and that adds and deletes rules.
 Do not use: settings, admin panel.
 
 ### caller (noun)
@@ -143,7 +143,9 @@ The shim keeps the op CLI's identity intact. The op CLI, not the shim, connects 
 
 **Transport decision (2026-08-15):** shim, session agent, and broker communicate over local named pipes. The broker reads each pipe client's process identifier from the pipe, and that identifier anchors caller resolution and session-agent pinning. A loopback TCP port was rejected because port-to-process mapping is racy. The broker serves three broker pipes: the shim pipe, the session-agent pipe, and the management pipe.
 
-The chosen implementation language is C# compiled with NativeAOT, which produces a single self-contained executable with near-native cold-start latency. Cold-start latency matters because the shim wraps every op CLI invocation, and agents invoke the op CLI in bursts.
+The chosen implementation language is C#. The shim and the broker compile with NativeAOT, which produces a single self-contained executable with near-native cold-start latency. Cold-start latency matters because the shim wraps every op CLI invocation, and agents invoke the op CLI in bursts.
+
+**Session-agent UI decision (2026-10-10):** the session agent is a WPF application that ships with its own .NET runtime, because Tamás wanted a usable interface for prompts, notifications, the audit log, and rule management, and raw Win32 makes each of those expensive. WPF cannot compile with NativeAOT. The cost is a larger install and about a second of start-up at logon, which nobody waits for. The session agent loads no shared runtime, so a same-user process cannot redirect it to a doctored runtime through an environment variable, and it disables .NET startup hooks for the same reason.
 
 ### Data-flow summary
 
@@ -390,6 +392,12 @@ REQ-RULE-31: When the broker stores more than one other form for a pinned value,
 
 REQ-RULE-32: When the broker stores a rule from a prompt, and REQ-RULE-29, REQ-RULE-30, or REQ-RULE-31 gives that rule a notice, the session agent MUST show that notice.
 
+**Notification decision (2026-10-10):** Tamás asked to see each read that passes without a prompt. A read that a stored rule allows runs the op CLI, and the op CLI's biometric prompt can follow, naming neither the secret nor the caller; the notification is the only place that names them. A read answered from the cache shows no prompt of any kind otherwise.
+
+REQ-RULE-38: When a stored rule allows a `read` invocation or a `run` invocation, the broker MUST notify the session agent with the caller and the secret paths, before the shim runs the op CLI.
+
+REQ-RULE-39: The session agent MUST show each notification of REQ-RULE-38 and REQ-CACHE-16 without taking focus. The session agent MAY combine the notifications from one caller and one source that arrive within 4 seconds of each other into one notification.
+
 REQ-RULE-33: When a prompt lists more than one request tuple, an `always-allow` or `always-disallow` decision MUST store one rule for each listed request tuple, at the scope the user chose.
 
 REQ-RULE-34: The broker MUST reject an `always-allow` or `always-disallow` decision whose scope pins a field that is unknown in at least one listed request tuple. The broker MUST then keep the prompt open. The reason is that a pinned unknown field would store a wildcard, and the stored rule would be broader than the rule the user saw.
@@ -408,7 +416,7 @@ REQ-TRUST-3: The install procedure MUST register the session agent to start at e
 
 REQ-TRUST-4: The broker MUST pin the first session-agent pipe connection whose client process runs the installed session-agent executable, by image path, in the active console session. The broker MUST accept a decision only from the pinned connection. When the pinned connection closes, the broker MUST pin the next connection that meets the same test. The reason is that without pinning, every same-user process can forge decisions, which defeats the service split.
 
-REQ-TRUST-5: The broker MUST accept a rule mutation from the management window only when the pipe client's token is an elevated Administrators token. The session agent MUST request elevation before it opens the management window.
+REQ-TRUST-5: The broker MUST accept a rule mutation from the management window only when the pipe client's token is an elevated Administrators token. The management window MAY show the stored rules without elevation. The session agent MUST request elevation before the management window offers a rule mutation.
 
 REQ-TRUST-6: A prompt decision MUST NOT require elevation.
 
@@ -477,6 +485,8 @@ REQ-CACHE-13: A cache key MUST hold the caller identity and the exact argument l
 REQ-CACHE-14: The broker MUST encrypt each cached value in memory with `CryptProtectMemory`, and MUST decrypt only a copy when the broker serves the entry. The reason is that a scan of broker memory then finds no secret value.
 
 REQ-CACHE-15: The broker MUST record each cache flush in the audit log as a `cache-flush` entry.
+
+REQ-CACHE-16: When the broker returns cached output, the broker MUST notify the session agent with the caller, the secret path, and the expiry time of the cache entry.
 
 **Cacheable surface decision (2026-08-17):** the cacheable surface is the output of `op read` invocations only, stated as REQ-CACHE-10. The argv spike traced the OpenTofu homelab workflow and found that every op CLI invocation it issues is `op read` with a secret reference, and that no other `read` subcommand appears at all. The narrow surface therefore covers the whole motivating workflow, and a narrow surface is preferred when both candidates would work. Findings: recorded in the project spike notes, which are kept outside this repository because they carry machine-specific and vault-specific detail.
 
@@ -548,7 +558,7 @@ Note: a caller that bypasses the shim while the op CLI session is warm triggers 
 
 Preconditions: the op CLI is installed, the desktop-app integration works, and the interactive user has confirmed the design in this document.
 
-1. Build the shim, the broker, and the session agent as NativeAOT executables.
+1. Build the shim and the broker as NativeAOT executables, and the session agent as a self-contained executable with its own runtime.
 2. Install all three executables to the install directory.
 3. Register the broker as a Windows service under `NT SERVICE\OpWarden`, with automatic start.
 4. Add `NT SERVICE\OpWarden` to the Performance Log Users group.

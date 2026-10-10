@@ -10,7 +10,7 @@ sources/OpWarden/
   OpWarden.Core/            pipe protocol, request/verdict types, argv classification, rule model
   OpWarden.Shim/            NativeAOT, named op.exe, must stay tiny
   OpWarden.Broker/          the service (console-runnable for development)
-  OpWarden.SessionAgent/    prompts, notifications, management window
+  OpWarden.SessionAgent/    WPF: prompts, toasts, tray icon, status, audit log and rules windows
   OpWarden.Tests/           unit tests for Core, end-to-end tests that drive the real executables
   OpWarden.Probe/           test executable that reports what it received: argv, stdin, a requested exit code
 sources/spike-argv/         the spikes that settled sections 5 and 9, kept as reference
@@ -30,9 +30,15 @@ Serialization is source-generated `System.Text.Json` everywhere. Reflection-base
 
 Step 5 builds on the service-account spike's results, summarised under "What the service account needs".
 
-## AOT everywhere
+## NativeAOT for the shim and broker, WPF for the session agent
 
-Section 3 and section 14 step 1 make all three executables NativeAOT. REQ-SHIM-8 (under 50 ms on a rule hit) is the only hard reason, and it binds the shim alone, but the broker and session agent are AOT too: the session agent's prompt, with the per-field pin/wildcard controls of REQ-RULE-7, is raw Win32, and the broker drives the service API and every Win32 call through `LibraryImport`. A JIT session agent with WPF would need a spec amendment first.
+REQ-SHIM-8 (under 50 ms on a rule hit) binds the shim, so the shim is NativeAOT, and the broker is too: it drives the service API and every Win32 call through `LibraryImport`. The session agent is WPF and ships self-contained (spec section 3, session-agent UI decision): WPF cannot compile with NativeAOT. Its pieces:
+
+- **Components** (`Components.cs`, styled in `Themes/Components.xaml`): one purpose each, each with an implicit style keyed by its type, none positioning itself. Brushes come from `Themes/Palette.Dark.xaml` or `Palette.Light.xaml`, swapped when Windows changes its app theme; every key names where a colour is used.
+- **Windows:** the prompt and the toasts are borderless, topmost and never take focus; the status, audit and rules windows use standard chrome with a title bar that follows the theme (`DwmSetWindowAttribute`).
+- **Tray:** `Shell_NotifyIcon` through P/Invoke on a hidden top-level `HwndSource`, which also hears session-lock events and theme changes; the icon is a shield rendered in the broker-state colour at the small-icon size.
+- **Rules editing:** the rules window restarts itself elevated with `--manage`; the elevated copy shows only that window.
+- **`--open status|audit|rules`** opens a window at start, for the tests and for review without clicking the tray.
 
 ## Win32 map
 
@@ -65,3 +71,6 @@ Verify on the real machine rather than trusting the install-time list: the execu
 - In git-bash a Windows-style `D:\...` entry in `PATH` is silently ignored; use the msys form `/d/...`.
 - In git-bash, `2>nul` creates a file literally named `nul` that Windows tools cannot delete. Use `2> /dev/null`.
 - The desktop app's biometric prompt still fires on a cold op CLI session after OpWarden returns `allow`. That is correct (section 15), not a bug.
+- WPF's font cache builds real cultures, so the session agent turns `InvariantGlobalization` off; with it on, every text layout throws.
+- WPF projects drop `System.IO` from the implicit usings, because `Path` collides with `System.Windows.Shapes.Path`; files that need it import it.
+- .NET's managed UI Automation client takes tens of seconds to search a desktop's top-level windows (45 s on a real desktop, where .NET Framework's takes 46 ms). The UI tests find the agent's windows with Win32 and hand only those to UI Automation, which answers in milliseconds.

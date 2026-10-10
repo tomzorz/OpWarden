@@ -48,7 +48,7 @@ $started = [DateTimeOffset]::UtcNow
 # Windows PowerShell leaves $PSScriptRoot empty while it binds parameter defaults.
 if (-not $Source) { $Source = Join-Path $PSScriptRoot '..\artifacts\publish' }
 $Source = [IO.Path]::GetFullPath($Source)
-foreach ($exe in 'OpWarden.Broker.exe', 'OpWarden.SessionAgent.exe', 'shim\op.exe') {
+foreach ($exe in 'OpWarden.Broker.exe', 'agent\OpWarden.SessionAgent.exe', 'shim\op.exe') {
     if (-not (Test-Path (Join-Path $Source $exe))) { throw "$exe is missing from $Source; run .\install\publish.ps1 first, unelevated." }
 }
 
@@ -67,7 +67,10 @@ $signature = Get-AuthenticodeSignature $OpPath
 if ($signature.Status -ne 'Valid') { Write-Warning "$OpPath carries no valid Authenticode signature ($($signature.Status)); the shim will run it anyway." }
 
 $broker = Join-Path $InstallDirectory 'OpWarden.Broker.exe'
-$agent = Join-Path $InstallDirectory 'OpWarden.SessionAgent.exe'
+$agentDirectory = Join-Path $InstallDirectory 'agent'
+$agent = Join-Path $agentDirectory 'OpWarden.SessionAgent.exe'
+# Before the session agent moved to WPF it was one native executable beside the broker.
+$singleFileAgent = Join-Path $InstallDirectory 'OpWarden.SessionAgent.exe'
 $shimDirectory = Join-Path $InstallDirectory 'shim'
 $config = Join-Path $InstallDirectory 'broker.json'
 $statePath = Join-Path $InstallDirectory 'install-state.json'
@@ -83,14 +86,21 @@ if ($service -and $service.Status -ne 'Stopped' -and $PSCmdlet.ShouldProcess($Se
     Stop-Service $ServiceName -Force
     (Get-Service $ServiceName).WaitForStatus('Stopped', '00:00:30')
 }
-if ($PSCmdlet.ShouldProcess($agent, 'Stop the running session agent')) { Stop-SessionAgent $agent }
+if ($PSCmdlet.ShouldProcess($agent, 'Stop the running session agent')) {
+    Stop-SessionAgent $agent
+    Stop-SessionAgent $singleFileAgent
+}
 
 # 2. The executables (spec section 14, step 2), and the record of what this install changes.
 if ($PSCmdlet.ShouldProcess($InstallDirectory, 'Copy the broker, the session agent and the shim')) {
     New-Item -ItemType Directory -Force $shimDirectory | Out-Null
     Copy-Item (Join-Path $Source 'OpWarden.Broker.exe') $broker -Force
-    Copy-Item (Join-Path $Source 'OpWarden.SessionAgent.exe') $agent -Force
     Copy-Item (Join-Path $Source 'shim\op.exe') (Join-Path $shimDirectory 'op.exe') -Force
+
+    # The session agent's folder is replaced whole, so no file of an older runtime lingers.
+    if (Test-Path $agentDirectory) { Remove-Item $agentDirectory -Recurse -Force }
+    Copy-Item (Join-Path $Source 'agent') $agentDirectory -Recurse
+    if (Test-Path $singleFileAgent) { Remove-Item $singleFileAgent -Force }
 }
 
 # The first install records the system state it is about to change; an upgrade keeps that

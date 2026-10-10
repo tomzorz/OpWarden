@@ -1,0 +1,94 @@
+<Window x:Class="OpWarden.SessionAgent.AuditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:OpWarden.SessionAgent"
+        Title="OpWarden audit log"
+        AutomationProperties.AutomationId="AuditWindow"
+        Width="1180" Height="680" MinWidth="760" MinHeight="420"
+        WindowStartupLocation="CenterScreen" UseLayoutRounding="True"
+        Background="{DynamicResource WindowBackdropBrush}" Foreground="{DynamicResource PrimaryTextBrush}"
+        FontFamily="{StaticResource InterfaceFontFamily}" FontSize="{StaticResource BodyFontSize}">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Filters and what is shown. -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="340" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <local:RecordFilterBox x:Name="FilterBox" AutomationProperties.AutomationId="AuditFilter" Placeholder="Filter: caller, secret, event, verdict…" />
+            <local:RecordFilterToggle x:Name="ProblemsOnly" Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Content="Problems only" />
+            <local:HintText x:Name="SummaryText" Grid.Column="2" Margin="16,0" VerticalAlignment="Center" TextAlignment="Right" />
+            <local:CommandButton Grid.Column="3" Content="Open folder" Click="OnOpenFolderClick" />
+        </Grid>
+
+        <local:RecordGrid x:Name="Records" Grid.Row="1" Margin="0,12,0,0" AutomationProperties.AutomationId="AuditRecords">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Time" Binding="{Binding Time}" Width="150" />
+                <DataGridTextColumn Header="Event" Binding="{Binding Event}" Width="130" />
+                <DataGridTextColumn Header="Caller" Binding="{Binding Caller}" Width="130" />
+                <DataGridTextColumn Header="Command" Binding="{Binding Command}" Width="90" />
+                <DataGridTemplateColumn Header="Secret" Width="*">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <local:SecretValueText Text="{Binding Secret}" ToolTip="{Binding Secret}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Verdict" Width="80">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock x:Name="Verdict" Text="{Binding Verdict}" />
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Verdict}" Value="Deny">
+                                    <Setter TargetName="Verdict" Property="Foreground" Value="{DynamicResource DeniedVerdictTextBrush}" />
+                                    <Setter TargetName="Verdict" Property="FontWeight" Value="SemiBold" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Reason" Width="90">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock x:Name="Reason" Text="{Binding Reason}" />
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Reason}" Value="cache">
+                                    <Setter TargetName="Reason" Property="Foreground" Value="{DynamicResource CachedReasonTextBrush}" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </local:RecordGrid>
+
+        <!-- The selected entry in full. -->
+        <Border Grid.Row="2" Margin="0,12,0,0" Padding="14,10" CornerRadius="8" Background="{DynamicResource RequestPanelBackgroundBrush}"
+                DataContext="{Binding SelectedItem, ElementName=Records}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <local:SectionHeadingText Text="Caller chain" />
+                    <local:SecretValueText Margin="0,4,0,0" Text="{Binding ChainText}" TextTrimming="None" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                    <local:SectionHeadingText Text="Invocation" />
+                    <local:SecretValueText Margin="0,4,0,0" Text="{Binding ArgumentsText}" TextTrimming="None" TextWrapping="Wrap" />
+                    <local:SectionHeadingText Margin="0,10,0,0" Text="Detail" />
+                    <local:BodyText Margin="0,4,0,0" Text="{Binding Detail}" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

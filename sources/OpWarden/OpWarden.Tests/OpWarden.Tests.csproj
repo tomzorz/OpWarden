@@ -4,6 +4,9 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- UI Automation for the session-agent tests, and the agent's WPF types. -->
+    <UseWPF>true</UseWPF>
     <!-- Test names are sentences; underscores keep them readable in the runner. -->
     <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
@@ -15,6 +18,8 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- WPF drops System.IO from the implicit usings over Path; the tests never use shapes. -->
+    <Using Include="System.IO" />
   </ItemGroup>
 
   <ItemGroup>

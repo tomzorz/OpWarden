@@ -34,9 +34,9 @@ internal sealed record PromptLayout(
     public static readonly (string Label, CacheTtl? Ttl)[] CacheChoices =
     [
         ("Don't cache", null),
-        ("Cache for 15 minutes", CacheTtl.FifteenMinutes),
-        ("Cache for 1 hour", CacheTtl.OneHour),
-        ("Cache for 8 hours", CacheTtl.EightHours),
+        ("15 minutes", CacheTtl.FifteenMinutes),
+        ("1 hour", CacheTtl.OneHour),
+        ("8 hours", CacheTtl.EightHours),
     ];
 
     public static PromptLayout From(ShowPrompt prompt)

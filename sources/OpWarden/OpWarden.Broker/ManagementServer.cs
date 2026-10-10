@@ -24,10 +24,12 @@ public sealed class ManagementServer : IAsyncDisposable
     private readonly RuleStore _rules;
     private readonly SecretCache _cache;
     private readonly AuditLog _audit;
+    private readonly AliasStore _aliases;
+    private readonly Func<BrokerStatus> _status;
 
-    internal ManagementServer(string pipeName, SecurityIdentifier user, RuleStore rules, SecretCache cache, AuditLog audit, Action<Exception> connectionFailed)
+    internal ManagementServer(string pipeName, SecurityIdentifier user, RuleStore rules, AliasStore aliases, SecretCache cache, AuditLog audit, Func<BrokerStatus> status, Action<Exception> connectionFailed)
     {
-        (_rules, _cache, _audit) = (rules, cache, audit);
+        (_rules, _aliases, _cache, _audit, _status) = (rules, aliases, cache, audit, status);
         _server = new PipeServer(pipeName, user, ServeAsync, connectionFailed);
     }
 
@@ -65,7 +67,10 @@ public sealed class ManagementServer : IAsyncDisposable
         switch (request)
         {
             case ListRules:
-                return new ManagementResponse(null, _rules.Current);
+                return WithRules();
+
+            case GetStatus:
+                return new ManagementResponse(null, Status: _status());
 
             case FlushCache:
                 var flushed = _cache.Flush();
@@ -75,21 +80,30 @@ public sealed class ManagementServer : IAsyncDisposable
             case AddRules add:
                 _rules.Add(add.Rules);
                 foreach (var rule in add.Rules) RecordChange("stored", rule);
-                return new ManagementResponse(null, _rules.Current);
+                return WithRules();
 
             case RemoveRule remove:
-                if (!_rules.Remove(remove.Rule)) return new ManagementResponse($"No stored rule equals {RuleText.Describe(remove.Rule)}.", _rules.Current);
+                if (!_rules.Remove(remove.Rule)) return WithRules($"No stored rule equals {RuleText.Describe(remove.Rule)}.");
                 RecordChange("removed", remove.Rule);
-                return new ManagementResponse(null, _rules.Current);
+                return WithRules();
 
             case SetPromptAlways mark:
                 _rules.SetPromptAlways(mark.Vault, mark.PromptAlways);
                 _audit.Append(new AuditEntry(DateTimeOffset.UtcNow, "rule-change", Source: RuleChangeSource.Management, Detail: mark.PromptAlways ? $"Marked the vault {mark.Vault} prompt-always." : $"Cleared prompt-always from the vault {mark.Vault}."));
-                return new ManagementResponse(null, _rules.Current);
+                return WithRules();
 
             default:
                 return new ManagementResponse($"The broker does not handle a {Describe(request)}.");
         }
+    }
+
+    /// <summary>
+    /// The rules as they stand, each with its notices (REQ-RULE-29 to REQ-RULE-31).
+    /// </summary>
+    private ManagementResponse WithRules(string? error = null)
+    {
+        var rules = _rules.Current;
+        return new ManagementResponse(error, rules, Notices: RuleAdvisor.Review(rules, _aliases));
     }
 
     private void RecordChange(string what, Rule rule) =>

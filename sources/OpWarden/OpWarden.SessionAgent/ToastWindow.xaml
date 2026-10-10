@@ -1,0 +1,41 @@
+<Window x:Class="OpWarden.SessionAgent.ToastWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:OpWarden.SessionAgent"
+        Title="OpWarden"
+        Width="400" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowActivated="False" ShowInTaskbar="False"
+        UseLayoutRounding="True">
+    <!-- The margin is room for the frame's shadow, and spaces stacked toasts. -->
+    <Grid Margin="12,6">
+        <local:ToastFrame x:Name="Frame" Cursor="Hand">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <local:ToastTitleText x:Name="TitleText" VerticalAlignment="Center" />
+                <local:WindowCloseButton Grid.Column="1" Margin="8,-4,-4,0" VerticalAlignment="Top" Click="OnCloseClick" />
+
+                <ItemsControl x:Name="LinesList" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,6,0,0" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <local:SecretValueText Margin="0,1" Text="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <local:BodyText x:Name="MessageText" Grid.Row="2" Grid.ColumnSpan="2" Margin="0,6,0,0" />
+                <local:HintText x:Name="FooterText" Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0" />
+            </Grid>
+        </local:ToastFrame>
+    </Grid>
+</Window>

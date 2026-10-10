@@ -26,12 +26,12 @@ dotnet format
 
 Tests run on Microsoft.Testing.Platform (`global.json`); pass xunit filters after `--`, for example `dotnet test -- --filter-method "*Shim*"`. The end-to-end tests run the built shim and probe as real processes, so build before `dotnet test --no-build`.
 
-The session-agent UI tests put real windows on the desktop, so they run only with `OPWARDEN_UI_TESTS=1`; set `OPWARDEN_UI_SCREENSHOTS` to a folder to get a PNG of each prompt. They render through `PrintWindow`, which works while the workstation is locked.
+The session-agent UI tests put real windows on the desktop and drive them through UI Automation, so they run only with `OPWARDEN_UI_TESTS=1`. With `OPWARDEN_UI_SCREENSHOTS` naming a folder, the session agent saves a PNG of each window it shows, rendered offscreen, which works while the workstation is locked.
 
-The session-agent UI tests run against the debug build unless `OPWARDEN_SESSION_AGENT` names another executable, such as a published NativeAOT one.
+The session-agent UI tests run against the debug build unless `OPWARDEN_SESSION_AGENT` names another executable, such as the published one in `artifacts/publish/agent`.
 
 ## Install
 
-`install/` carries spec section 14 as scripts. `publish.ps1` builds all three executables NativeAOT into `artifacts/publish`; run it unelevated, because an elevated build leaves files in `bin` and `obj` that later builds cannot overwrite. `install.ps1` runs elevated and installs the service, the session agent's logon entry, the grants and the PATH entry; running it again upgrades in place and keeps the data directory. `uninstall.ps1` is the rollback, and keeps the data directory unless given `-RemoveData`. Both accept `-WhatIf`, which runs unelevated. `install-state.json` in the install directory records what the install changed, so the rollback reverts exactly that.
+`install/` carries spec section 14 as scripts. `publish.ps1` builds the shim and the broker NativeAOT and the session agent self-contained into `artifacts/publish`; run it unelevated, because an elevated build leaves files in `bin` and `obj` that later builds cannot overwrite. `install.ps1` runs elevated and installs the service, the session agent's logon entry, the grants and the PATH entry; running it again upgrades in place and keeps the data directory. `uninstall.ps1` is the rollback, and keeps the data directory unless given `-RemoveData`. Both accept `-WhatIf`, which runs unelevated. `install-state.json` in the install directory records what the install changed, so the rollback reverts exactly that.
 
 The shim publishes NativeAOT (`dotnet publish OpWarden.Shim -c Release -o <dir>`). If the native link cannot find `vswhere.exe`, put `C:\Program Files (x86)\Microsoft Visual Studio\Installer` on PATH; if it still fails, `-t:IlcCompile` proves the code is AOT-clean. The REQ-SHIM-8 latency test runs only against a published shim: set `OPWARDEN_AOT_SHIM` to its `op.exe`.
