@@ -133,7 +133,7 @@ OpWarden has three executables, two data files, and two in-memory stores:
 - The shim: a small executable named `op.exe`, placed on `PATH` ahead of the op CLI. The shim parses the invocation, asks the broker for a verdict over a local named pipe, and acts on the verdict. The shim never connects to the desktop app's named pipe.
 - The broker: a Windows service under the service account. The broker maintains the process map, resolves the caller, matches rules, evaluates cache grants, serializes prompts through the session agent, runs the bypass watcher, and writes the audit log.
 - The session agent: an unprivileged process that starts at each logon in the interactive user's logon session, and that the broker pins (REQ-TRUST-3, REQ-TRUST-4). The session agent renders prompts, notifications, and the management window. The session agent holds no state.
-- The rule store and the audit log: files under the install directory, writable only by the service account and by Administrators (REQ-TRUST-2).
+- The rule store and the audit log: files in the data directory, writable only by the service account and by Administrators (REQ-TRUST-2).
 - The cache: broker process memory only.
 - The process map: broker process memory only. The broker builds it from process-creation events and uses it to resolve callers (section 5).
 
@@ -247,7 +247,9 @@ REQ-CALL-20: When the broker cannot subscribe to process-creation events, the br
 
 REQ-CALL-21: The broker MUST decode each process-creation event by the layout that the provider's manifest gives for the event's version. When the broker does not know an event's version, the broker MUST NOT guess a layout, and the process that the event describes stays unresolvable through the process map.
 
-REQ-CALL-22: For REQ-CALL-15, the interactive logon session's shell is a process whose image is `explorer.exe` in the Windows directory, and that runs in the active console session.
+**Logon-shell decision (2026-10-10):** Windows starts packaged apps, Windows Terminal among them, from the shell infrastructure host `sihost.exe`, not from `explorer.exe`. Every shell in Windows Terminal therefore descends from `sihost.exe`, so with `explorer.exe` as the only logon shell, every command typed there resolved as `unknown`. Tamás chose to count both.
+
+REQ-CALL-22: For REQ-CALL-15, the interactive logon session's shell is a process that runs in the active console session, and whose image is exactly one of `explorer.exe` in the Windows directory and `sihost.exe` in the Windows system directory.
 
 **Event-access decision (2026-10-04):** a virtual service account receives process-creation events only with two grants, which the install procedure makes and the rollback reverts: membership in Performance Log Users, without which Windows refuses to start the trace session, and the right to enable `Microsoft-Windows-Kernel-Process`, granted with `EventAccessControl`, without which Windows refuses to enable the provider. The provider carries access control of its own, so membership alone is not enough. The service-account spike measured all three states under the service account: the trace session refused without membership, the provider refused with membership alone, and four process-start events in five seconds with both grants.
 
@@ -548,7 +550,7 @@ Preconditions: the op CLI is installed, the desktop-app integration works, and t
 4. Add `NT SERVICE\OpWarden` to the Performance Log Users group.
 5. Grant `NT SERVICE\OpWarden` the right to enable `Microsoft-Windows-Kernel-Process` with `EventAccessControl`. Before the grant, save the provider's security value under `HKLM\SYSTEM\CurrentControlSet\Control\WMI\Security`, or record that it is absent.
 6. Register the session agent to start at each logon (REQ-TRUST-3).
-7. Set the file permissions from REQ-TRUST-2 on the rule store and the audit log.
+7. Create the data directory, and set the file permissions from REQ-TRUST-2 on the data directory.
 8. Record the op CLI's path, and the interactive user's security identifier, in the broker configuration (REQ-TRUST-12).
 9. Place the shim directory on `PATH` ahead of the op CLI directory.
 10. Sign out, then sign in. The session agent starts (REQ-TRUST-3).
@@ -558,11 +560,13 @@ Preconditions: the op CLI is installed, the desktop-app integration works, and t
 Rollback:
 
 1. Remove the shim directory from `PATH`.
-2. Stop and unregister the broker service.
-3. Remove the session agent's logon registration, and stop the session agent.
+2. Stop the broker service.
+3. Remove `NT SERVICE\OpWarden` from the Performance Log Users group. Do this before step 5: the account name stops resolving once the service is unregistered.
 4. Put the saved security value of `Microsoft-Windows-Kernel-Process` back, or delete the value when it was absent before the install.
-5. Remove `NT SERVICE\OpWarden` from the Performance Log Users group.
-6. The op CLI then runs directly, unchanged.
+5. Unregister the broker service.
+6. Remove the session agent's logon registration, and stop the session agent.
+7. Delete the install directory. The data directory stays, unless the interactive user chooses to delete the rules and the audit log with it.
+8. The op CLI then runs directly, unchanged.
 
 ## 15. Non-goals
 
@@ -576,6 +580,9 @@ Rollback:
 - PATH bypass: a caller that runs the op CLI by its full path bypasses the shim. The bypass watcher records the start and notifies the session agent; nothing blocks the invocation. The procedure in section 13 closes the cold-session case at the biometric prompt.
 - Elevated attacker: a process with an elevated Administrators token can stop the broker, edit the rule store, and read broker memory. OpWarden's privilege separation targets non-elevated same-user processes, which is what agents are.
 - Session-agent replacement: the pinning in REQ-TRUST-4 raises the bar against decision forgery. A same-user process can still inject code into the pinned session agent, or kill it and race a copy of the installed executable to the pin. Both are detectable through the audit log, not preventable.
+
+- Tree escape: an agent can start a process outside its own ancestry, for example through `explorer.exe`, a COM activation, or a scheduled task. The walk from that process reaches a logon shell without passing the agent host. The broker then classifies its invocations as the interactive user, and OpWarden does not detect the escape.
+- 1Password session scope: on Windows, the op CLI ties an authorization to the identifier and start time of the process that invokes the op CLI. Behind the shim, that process is the shim, which is new for each invocation. Each invocation that runs the op CLI therefore needs its own Windows Hello approval. Agent harnesses start a new shell for each command, and `$(op read …)` runs in a new subshell, so neither case loses an approval it had. A person who runs several op CLI commands in one terminal does lose one.
 
 - Pipe exhaustion: a same-user process can hold every instance of a broker pipe open, and the broker then answers no new client until instances close. The failure is a `deny` at the shim, never an `allow`.
 - Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file, but REQ-CACHE-14 means only ciphertext reaches it.
@@ -595,6 +602,8 @@ Rollback:
 - OpWarden requires that the op CLI session never stays warm, so each op CLI run passes Windows Hello, and the cache (section 9) absorbs repeated reads. A scripted decision then cannot complete an op CLI run without Hello; it can still approve cached output and store rules, so the cache grant and the `always-` decisions become the controls to guard.
 
 The session agent routes every decision through one acceptance check, so either answer fits without rework.
+
+**1Password session scope (opened 2026-10-10).** Section 16 records that each op CLI run behind the shim needs its own Windows Hello approval. The shim can create the op CLI process with the shim's own parent as the new process's parent (`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`). The op CLI then sees the same invoking process as without OpWarden, and one approval covers a terminal again. The costs: the shim must duplicate its standard handles into the parent process, and the bypass watcher must recognize an op CLI process that a shim created without parenting it. Deferred until the cache is in daily use.
 
 Every other decision this document opened is resolved and recorded in the section it affects.
 

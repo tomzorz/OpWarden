@@ -28,4 +28,10 @@ Tests run on Microsoft.Testing.Platform (`global.json`); pass xunit filters afte
 
 The session-agent UI tests put real windows on the desktop, so they run only with `OPWARDEN_UI_TESTS=1`; set `OPWARDEN_UI_SCREENSHOTS` to a folder to get a PNG of each prompt. They render through `PrintWindow`, which works while the workstation is locked.
 
+The session-agent UI tests run against the debug build unless `OPWARDEN_SESSION_AGENT` names another executable, such as a published NativeAOT one.
+
+## Install
+
+`install/` carries spec section 14 as scripts. `publish.ps1` builds all three executables NativeAOT into `artifacts/publish`; run it unelevated, because an elevated build leaves files in `bin` and `obj` that later builds cannot overwrite. `install.ps1` runs elevated and installs the service, the session agent's logon entry, the grants and the PATH entry; running it again upgrades in place and keeps the data directory. `uninstall.ps1` is the rollback, and keeps the data directory unless given `-RemoveData`. Both accept `-WhatIf`, which runs unelevated. `install-state.json` in the install directory records what the install changed, so the rollback reverts exactly that.
+
 The shim publishes NativeAOT (`dotnet publish OpWarden.Shim -c Release -o <dir>`). If the native link cannot find `vswhere.exe`, put `C:\Program Files (x86)\Microsoft Visual Studio\Installer` on PATH; if it still fails, `-t:IlcCompile` proves the code is AOT-clean. The REQ-SHIM-8 latency test runs only against a published shim: set `OPWARDEN_AOT_SHIM` to its `op.exe`.

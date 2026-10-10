@@ -42,7 +42,14 @@ public sealed class CallerResolver(
     /// </summary>
     public const int MaxHops = 64;
 
-    private static readonly string Explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+    // The two roots of what the user starts from the desktop (REQ-CALL-22): explorer for
+    // ordinary programs, and the shell infrastructure host for packaged apps such as
+    // Windows Terminal, which the Start menu and taskbar activate through it.
+    private static readonly string[] LogonShells =
+    [
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
+        Path.Combine(Environment.SystemDirectory, "sihost.exe"),
+    ];
 
     public CallerResolution Resolve(int shimProcessId)
     {
@@ -117,5 +124,5 @@ public sealed class CallerResolver(
     }
 
     private static bool IsLogonShell(ProcessEntry process, int consoleSession) =>
-        process.SessionId == consoleSession && string.Equals(process.ImagePath, Explorer, StringComparison.OrdinalIgnoreCase);
+        process.SessionId == consoleSession && LogonShells.Contains(process.ImagePath, StringComparer.OrdinalIgnoreCase);
 }

@@ -26,7 +26,7 @@ Serialization is source-generated `System.Text.Json` everywhere. Reflection-base
 4. **Cache** (section 9).
 5. **Trust hardening.** Service registration, ACLs, session-agent pinning, the elevation gate (section 8).
 6. **Process map and bypass watcher** (sections 5 and 10).
-7. **Install and rollback script** (section 14). Acceptance is section 14 steps 7 to 9.
+7. **Install and rollback script** (section 14), in `install/`. Acceptance is section 14 steps 10 to 12.
 
 Step 5 builds on the service-account spike's results, summarised under "What the service account needs".
 

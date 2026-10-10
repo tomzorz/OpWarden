@@ -7,3 +7,5 @@ Thumbs.db.meta
 *.directory
 
 # Add your custom repo-wide rules below: 
+# Published executables (install/publish.ps1)
+artifacts/

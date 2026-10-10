@@ -149,6 +149,7 @@ public sealed class ProcessMapTests
 public sealed class CallerResolverTests
 {
     private static readonly string Explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+    private static readonly string ShellHost = Path.Combine(Environment.SystemDirectory, "sihost.exe");
     private const int Session = 1;
 
     private static readonly AgentHost[] Agents = [new("claude-code", "claude.exe", "Anthropic, PBC"), new("opencode", "opencode.exe", null)];
@@ -231,6 +232,23 @@ public sealed class CallerResolverTests
         var result = Resolve([P(10, 0, 10, Explorer), P(20, 10, 20, @"C:\Program Files\WindowsApps\Terminal\WindowsTerminal.exe"), P(30, 20, 30, @"C:\Program Files\PowerShell\pwsh.exe"), P(1000, 30, 50, @"C:\OpWarden\op.exe")]);
 
         Assert.Equal(CallerIdentity.InteractiveUser, result.Caller);
+    }
+
+    [Fact]
+    public void Windows_Terminal_started_through_the_shell_host_is_the_interactive_user()
+    {
+        // The shape measured on a real machine: packaged apps hang off sihost, not explorer.
+        var result = Resolve([P(10, 0, 10, ShellHost), P(20, 10, 20, @"C:\Program Files\WindowsApps\Terminal\WindowsTerminal.exe"), P(30, 20, 30, @"C:\Program Files\PowerShell\pwsh.exe"), P(1000, 30, 50, @"C:\OpWarden\op.exe")]);
+
+        Assert.Equal(CallerIdentity.InteractiveUser, result.Caller);
+    }
+
+    [Fact]
+    public void A_sihost_exe_outside_the_system_directory_is_no_logon_shell()
+    {
+        var result = Resolve([P(10, 0, 10, @"C:\Temp\sihost.exe"), P(1000, 10, 50, @"C:\OpWarden\op.exe")]);
+
+        Assert.Equal(CallerIdentity.Unknown, result.Caller);
     }
 
     [Fact]

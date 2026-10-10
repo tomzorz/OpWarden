@@ -13,15 +13,19 @@ namespace OpWarden.Broker.Callers;
 /// events to <see cref="OnEvent"/>, and ControlTrace stops it.
 ///
 /// Starting a session needs an administrator, a member of Performance Log Users, or one of
-/// the built-in service accounts. The console broker running as an ordinary user gets
-/// access denied, reports it (REQ-CALL-20) and resolves callers by the live walk alone.
+/// the built-in service accounts, and enabling Kernel-Process needs a grant on the provider
+/// besides (section 5, event-access decision). Without either, the broker reports it
+/// (REQ-CALL-20) and resolves callers by the live walk alone.
+///
+/// The session is named per account, so a console broker or a test run never stops the
+/// installed service's session when it clears a session a dead broker left behind.
 ///
 /// The event handler only decodes and records (REQ-CALL-3); buffers are sized generously
 /// because a slow or starved consumer is how ETW loses events.
 /// </remarks>
 public sealed unsafe partial class ProcessEventSession : IDisposable
 {
-    public const string SessionName = "OpWarden-ProcessMap";
+    public static readonly string SessionName = $"OpWarden-ProcessMap-{CurrentAccount()}";
 
     private static ProcessEventSession? _active;
 
@@ -174,6 +178,12 @@ public sealed unsafe partial class ProcessEventSession : IDisposable
             // Nothing may escape into ETW's thread; the event counts as undecodable.
             Interlocked.Increment(ref session._undecodable);
         }
+    }
+
+    private static string CurrentAccount()
+    {
+        using var self = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return self.User!.Value;
     }
 
     private static void StopByName()

@@ -110,7 +110,14 @@ internal static class BuiltExecutables
 
     public static string Broker => Locate("OpWarden.Broker", Path.Combine("win-x64", "OpWarden.Broker.exe"));
 
-    public static string SessionAgent => Locate("OpWarden.SessionAgent", Path.Combine("win-x64", "OpWarden.SessionAgent.exe"));
+    /// <summary>
+    /// The debug build, or the executable OPWARDEN_SESSION_AGENT names, so the UI tests can
+    /// run against a published NativeAOT session agent.
+    /// </summary>
+    public static string SessionAgent =>
+        Environment.GetEnvironmentVariable("OPWARDEN_SESSION_AGENT") is { Length: > 0 } published
+            ? published
+            : Locate("OpWarden.SessionAgent", Path.Combine("win-x64", "OpWarden.SessionAgent.exe"));
 
     // The tests run from <solution>\OpWarden.Tests\bin\<configuration>\<tfm>\, and the
     // project references build the shim and the probe into the same shape beside them.
