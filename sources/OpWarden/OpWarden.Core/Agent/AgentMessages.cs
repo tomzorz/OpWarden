@@ -25,7 +25,8 @@ public sealed record RuleScope(bool Caller, bool Action, bool Vault, bool Item, 
 
 /// <summary>
 /// A message between the broker and the session agent. The broker sends prompts,
-/// closes them and sends notices; the session agent sends decisions and lock events.
+/// closes them, sends notices, and refuses a connection it will not pin; the session
+/// agent sends decisions and lock events.
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(ShowPrompt), "show-prompt")]
@@ -33,6 +34,7 @@ public sealed record RuleScope(bool Caller, bool Action, bool Vault, bool Item, 
 [JsonDerivedType(typeof(ShowNotice), "show-notice")]
 [JsonDerivedType(typeof(DecisionMade), "decision")]
 [JsonDerivedType(typeof(WorkstationLocked), "workstation-locked")]
+[JsonDerivedType(typeof(AgentRefused), "agent-refused")]
 public abstract record AgentMessage;
 
 /// <summary>
@@ -73,3 +75,9 @@ public sealed record DecisionMade(Guid PromptId, PromptDecision Decision, RuleSc
 /// The interactive user locked the workstation; the broker flushes the cache (REQ-CACHE-7).
 /// </summary>
 public sealed record WorkstationLocked : AgentMessage;
+
+/// <summary>
+/// The broker will not take decisions from this connection (REQ-TRUST-4), and closes it
+/// after this message.
+/// </summary>
+public sealed record AgentRefused(string Reason) : AgentMessage;

@@ -47,7 +47,7 @@ public sealed class CacheFlowTests : IDisposable
         Assert.Equal(0, second.ExitCode);
         Assert.Equal("s3cret\n", second.Stdout);
         Assert.False(ProbeRan());
-        Assert.Equal("cache", broker.AuditEntries().Last(e => e.GetProperty("event").GetString() == "invocation").GetProperty("reason").GetString());
+        Assert.Equal("cache", broker.AuditEntries("invocation")[^1].GetProperty("reason").GetString());
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public sealed class CacheFlowTests : IDisposable
         await broker.RunShimAsync(["read", "op://V/I/K"], Probe("s3cret"));
         await WaitUntilAsync(() => broker.Cache.Count == 1);
 
-        broker.Rules.MarkPromptAlways("V");
+        broker.Rules.SetPromptAlways("V", true);
         var run = broker.RunShimAsync(["read", "op://V/I/K"]);
         var prompt = await agent.NextAsync<ShowPrompt>();
         await agent.DecideAsync(prompt, PromptDecision.DisallowOnce);

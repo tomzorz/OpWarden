@@ -25,6 +25,7 @@ public sealed record CallerResolution(CallerIdentity Caller, IReadOnlyList<strin
 ///           (map entry, else live entry started before its child)
 ///
 ///   an agent host anywhere on the way ........ that agent, the nearest one  REQ-CALL-13
+///   an agent host's name, wrong signature .... unknown                      REQ-CALL-14
 ///   the logon shell reached, no agent ........ interactive-user             REQ-CALL-15
 ///   the walk broke or ended anywhere else .... unknown                      REQ-CALL-18
 /// </code>
@@ -52,14 +53,22 @@ public sealed class CallerResolver(
         if (liveProcess(shimProcessId) is not { } current) return new(CallerIdentity.Unknown, ["shim process not found"]);
 
         var session = consoleSession();
-        string? agent = null;
         for (var hop = 0; hop < MaxHops; hop++)
         {
             chain.Add($"{current.ImageName}({current.ProcessId})");
 
             // The shim itself is never its own agent host.
-            if (hop > 0 && agent is null) agent = MatchAgent(current);
-            if (agent is not null) return new(CallerIdentity.Agent(agent), chain);
+            if (hop > 0)
+            {
+                var (agent, unverified) = MatchAgent(current);
+                if (agent is not null) return new(CallerIdentity.Agent(agent), chain);
+                if (unverified is not null)
+                {
+                    chain.Add($"(end: not signed by {unverified})");
+                    return new(CallerIdentity.Unknown, chain);
+                }
+            }
+
             if (IsLogonShell(current, session)) return new(CallerIdentity.InteractiveUser, chain);
 
             if (Parent(current) is not { } parent)
@@ -87,16 +96,24 @@ public sealed class CallerResolver(
         return liveProcess(child.ParentId) is { CreateTime: > 0 } live && child.CreateTime > 0 && live.CreateTime <= child.CreateTime ? live : null;
     }
 
-    private string? MatchAgent(ProcessEntry process)
+    /// <summary>
+    /// The agent this process hosts, or else the signer it failed to show: a process that
+    /// takes an agent host's file name without its signature ends the walk as unknown
+    /// (REQ-CALL-14). Walking on past it would reach the logon shell and promote whatever
+    /// runs under it to the interactive user.
+    /// </summary>
+    private (string? Agent, string? Unverified) MatchAgent(ProcessEntry process)
     {
+        string? unverified = null;
         foreach (var host in agents)
         {
             if (!string.Equals(process.ImageName, host.FileName, StringComparison.OrdinalIgnoreCase)) continue;
-            if (host.Signer is null) return host.Name;
-            if (process.ImagePath is { } path && string.Equals(signerOf(path), host.Signer, StringComparison.OrdinalIgnoreCase)) return host.Name;
+            if (host.Signer is null) return (host.Name, null);
+            if (process.ImagePath is { } path && string.Equals(signerOf(path), host.Signer, StringComparison.OrdinalIgnoreCase)) return (host.Name, null);
+            unverified = host.Signer;
         }
 
-        return null;
+        return (null, unverified);
     }
 
     private static bool IsLogonShell(ProcessEntry process, int consoleSession) =>

@@ -24,7 +24,7 @@ public sealed class BrokerTests
         Assert.Equal(0, run.ExitCode);
         Assert.Equal("value", run.Stdout);
         Assert.False(agent.TryPeek(out _));
-        var entry = Assert.Single(broker.AuditEntries());
+        var entry = Assert.Single(broker.AuditEntries("invocation"));
         Assert.Equal("invocation", entry.GetProperty("event").GetString());
         Assert.Equal("rule", entry.GetProperty("reason").GetString());
         Assert.Equal("Allow", entry.GetProperty("verdict").GetString());
@@ -59,7 +59,7 @@ public sealed class BrokerTests
         Assert.Equal(new Rule(Claude, OpAction.Read, "V", "I", null, Verdict.Allow), Assert.Single(broker.Rules.Current.Rules));
 
         Assert.Equal(0, (await broker.RunShimAsync(["read", "op://V/I/other"])).ExitCode);
-        Assert.Equal(["user", "rule"], broker.AuditEntries().Where(e => e.GetProperty("event").GetString() == "invocation").Select(e => e.GetProperty("reason").GetString()));
+        Assert.Equal(["user", "rule"], broker.AuditEntries("invocation").Select(e => e.GetProperty("reason").GetString()));
         Assert.Contains(broker.AuditEntries(), e => e.GetProperty("event").GetString() == "rule-change" && e.GetProperty("source").GetString() == "prompt");
     }
 
@@ -117,7 +117,7 @@ public sealed class BrokerTests
         var run = await broker.RunShimAsync(["read", "op://V/I/K"]);
 
         Assert.Equal(ExitDenied, run.ExitCode);
-        Assert.Equal("timeout", Assert.Single(broker.AuditEntries()).GetProperty("reason").GetString());
+        Assert.Equal("timeout", Assert.Single(broker.AuditEntries("invocation")).GetProperty("reason").GetString());
     }
 
     [Fact]
@@ -144,8 +144,8 @@ public sealed class BrokerTests
         shim.Kill();
 
         Assert.Equal(new ClosePrompt(prompt.PromptId, "abandoned"), await agent.NextAsync<ClosePrompt>());
-        await WaitUntilAsync(() => broker.AuditEntries().Count == 1);
-        Assert.Equal("abandoned", broker.AuditEntries()[0].GetProperty("reason").GetString());
+        await WaitUntilAsync(() => broker.AuditEntries("invocation").Count == 1);
+        Assert.Equal("abandoned", broker.AuditEntries("invocation")[0].GetProperty("reason").GetString());
     }
 
     [Fact]

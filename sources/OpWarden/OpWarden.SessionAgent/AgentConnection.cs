@@ -13,6 +13,10 @@ internal sealed class AgentConnection(string pipeName, Action<AgentMessage> rece
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
 
+    // A refusal does not go away on its own (another session agent is pinned, or this
+    // one is not the installed copy), and each attempt costs an audit-log entry.
+    private static readonly TimeSpan RefusedRetryDelay = TimeSpan.FromMinutes(1);
+
     private readonly Channel<AgentMessage> _outgoing = Channel.CreateUnbounded<AgentMessage>(new UnboundedChannelOptions { SingleReader = true });
 
     /// <summary>
@@ -25,6 +29,7 @@ internal sealed class AgentConnection(string pipeName, Action<AgentMessage> rece
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            var delay = RetryDelay;
             try
             {
                 await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
@@ -34,7 +39,17 @@ internal sealed class AgentConnection(string pipeName, Action<AgentMessage> rece
 
                 using var connection = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 var sending = SendLoopAsync(pipe, connection.Token);
-                while (await AgentProtocol.ReadAsync(pipe, cancellationToken).ConfigureAwait(false) is { } message) received(message);
+                while (await AgentProtocol.ReadAsync(pipe, cancellationToken).ConfigureAwait(false) is { } message)
+                {
+                    if (message is AgentRefused refused)
+                    {
+                        AgentLog.Write($"the broker refused this session agent: {refused.Reason}");
+                        delay = RefusedRetryDelay;
+                        continue;
+                    }
+
+                    received(message);
+                }
 
                 await connection.CancelAsync().ConfigureAwait(false);
                 await sending.ConfigureAwait(false);
@@ -49,7 +64,7 @@ internal sealed class AgentConnection(string pipeName, Action<AgentMessage> rece
             }
 
             connectedChanged(false);
-            await Task.Delay(RetryDelay, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
         }
     }
 

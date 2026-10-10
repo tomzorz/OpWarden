@@ -45,6 +45,31 @@ public sealed class StorageTests : IDisposable
     }
 
     [Fact]
+    public void A_removed_rule_stays_removed_after_a_reopen()
+    {
+        var store = OpenRules();
+        store.Add([AllowRead, DenyProd]);
+
+        Assert.True(store.Remove(AllowRead));
+        Assert.False(store.Remove(AllowRead));
+
+        Assert.Equal([DenyProd], OpenRules().Current.Rules);
+    }
+
+    [Fact]
+    public void A_prompt_always_mark_can_be_set_and_cleared()
+    {
+        var store = OpenRules();
+
+        store.SetPromptAlways("Prod", true);
+        store.SetPromptAlways("prod", true);
+        Assert.Equal(["Prod"], OpenRules().Current.PromptAlwaysVaults);
+
+        store.SetPromptAlways("PROD", false);
+        Assert.Empty(OpenRules().Current.PromptAlwaysVaults);
+    }
+
+    [Fact]
     public void A_hand_edited_rule_store_is_quarantined_and_the_broker_starts_with_no_rules()
     {
         OpenRules().Add([DenyProd]);

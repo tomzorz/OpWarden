@@ -4,6 +4,7 @@ using OpWarden.Broker.Audit;
 using OpWarden.Broker.Cache;
 using OpWarden.Broker.Callers;
 using OpWarden.Broker.Integrity;
+using OpWarden.Broker.Pipes;
 using OpWarden.Broker.Prompts;
 using OpWarden.Broker.Storage;
 using OpWarden.Core;
@@ -38,9 +39,12 @@ public sealed class BrokerService(
     // connection. Keyed by the request object, which the pipe server hands to both calls.
     private readonly ConditionalWeakTable<ShimRequest, Grant> _grants = [];
 
-    public async ValueTask<VerdictResponse> DecideAsync(ShimRequest request, int clientProcessId, CancellationToken abandoned)
+    internal async ValueTask<VerdictResponse> DecideAsync(ShimRequest request, PipeClient client, CancellationToken abandoned)
     {
-        var resolution = resolveCaller(clientProcessId);
+        // As the shim's user: the agent hosts' executables sit in that user's profile,
+        // which the service account cannot read, and an unreadable signature would make
+        // every agent unknown (REQ-CALL-14).
+        var resolution = client.RunAs(() => resolveCaller(client.ProcessId));
         var caller = resolution.Caller;
         var cacheKey = IsCacheable(request, caller) ? CacheKey.For(caller, request.Arguments) : null;
         var evaluation = Evaluate(caller, request);

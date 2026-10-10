@@ -3,17 +3,25 @@ using System.Runtime.InteropServices;
 namespace OpWarden.Broker.Callers;
 
 /// <summary>
-/// The processes running now, from the Toolhelp snapshot plus <c>GetProcessTimes</c>: the
-/// seed of the process map (REQ-CALL-5), the live fallback of the walk (REQ-CALL-11), and
-/// the running set that retention keeps (REQ-CALL-7).
+/// The processes running now: the seed of the process map (REQ-CALL-5), the live fallback
+/// of the walk (REQ-CALL-11), and the running set that retention keeps (REQ-CALL-7).
 /// </summary>
+/// <remarks>
+/// Everything comes from <c>NtQuerySystemInformation</c>, which describes every process
+/// without opening any. The broker runs as a virtual service account, and Windows lets
+/// that account open none of the interactive user's processes, so <c>OpenProcess</c>
+/// plus <c>GetProcessTimes</c> would leave every user process without a start time and
+/// unprovable as anyone's parent. <c>SystemProcessIdInformation</c> (class 88) is
+/// undocumented but has kept its shape since Vista; Process Explorer and psutil read
+/// image paths through it for the same reason.
+/// </remarks>
 public static unsafe partial class LiveProcesses
 {
     /// <summary>
-    /// Every running process, fully described. Opens every process, so it belongs to
-    /// seeding and retention, not to the per-invocation walk.
+    /// Every running process, fully described. Looks up every image path, so it belongs
+    /// to seeding and retention, not to the per-invocation walk.
     /// </summary>
-    public static IReadOnlyList<ProcessEntry> Snapshot() => [.. Enumerate().Select(p => Describe(p.ProcessId, p.ParentId, p.ExeName))];
+    public static IReadOnlyList<ProcessEntry> Snapshot() => [.. Enumerate().Select(p => p with { ImagePath = ImagePathOf(p.ProcessId) ?? p.ImagePath })];
 
     /// <summary>
     /// The live entry for one process ID, with its parent as Windows records it now, or
@@ -24,7 +32,7 @@ public static unsafe partial class LiveProcesses
     {
         foreach (var process in Enumerate())
         {
-            if (process.ProcessId == processId) return Describe(process.ProcessId, process.ParentId, process.ExeName);
+            if (process.ProcessId == processId) return process with { ImagePath = ImagePathOf(processId) ?? process.ImagePath };
         }
 
         return null;
@@ -36,82 +44,106 @@ public static unsafe partial class LiveProcesses
     public static int ConsoleSessionId => (int)WTSGetActiveConsoleSessionId();
 
     /// <summary>
-    /// Toolhelp's view: IDs, parent IDs and file names only, which needs no process handle.
+    /// The executable's drive path, or null for the pseudo-processes that have none (Idle,
+    /// System) and for a process that exited meanwhile.
     /// </summary>
-    private static List<(int ProcessId, int ParentId, string ExeName)> Enumerate()
+    public static string? ImagePathOf(int processId)
     {
-        var result = new List<(int, int, string)>();
-        var snapshot = CreateToolhelp32Snapshot(SnapProcess, 0);
-        if (snapshot == InvalidHandle) return result;
+        const int Capacity = 32_767;
+        var buffer = (char*)NativeMemory.Alloc(Capacity * sizeof(char));
         try
         {
-            var entry = new PROCESSENTRY32W { dwSize = (uint)sizeof(PROCESSENTRY32W) };
-            if (!Process32FirstW(snapshot, &entry)) return result;
-            do
+            var info = new SYSTEM_PROCESS_ID_INFORMATION
             {
-                result.Add(((int)entry.th32ProcessID, (int)entry.th32ParentProcessID, new string(entry.szExeFile)));
-            }
-            while (Process32NextW(snapshot, &entry));
+                ProcessId = processId,
+                ImageName = new UNICODE_STRING { Length = 0, MaximumLength = (Capacity - 1) * sizeof(char), Buffer = buffer },
+            };
+            if (NtQuerySystemInformation(SystemProcessIdInformation, &info, (uint)sizeof(SYSTEM_PROCESS_ID_INFORMATION), null) != 0) return null;
+            return info.ImageName.Length == 0 ? null : DevicePaths.ToDrivePath(new string(buffer, 0, info.ImageName.Length / sizeof(char)));
         }
         finally
         {
-            CloseHandle(snapshot);
+            NativeMemory.Free(buffer);
         }
-
-        return result;
     }
 
     /// <summary>
-    /// A process the broker may not open (a protected one) keeps creation time 0 and its
-    /// bare file name, so it can never be proven anyone's parent.
+    /// IDs, parent IDs, start times, sessions and bare file names of every process, with
+    /// no process handle: the bare name stands in as the path until <see cref="ImagePathOf"/>
+    /// fills it.
     /// </summary>
-    private static ProcessEntry Describe(int processId, int parentId, string exeName)
+    private static List<ProcessEntry> Enumerate()
     {
-        var session = ProcessIdToSessionId((uint)processId, out var processSession) ? (int)processSession : -1;
-        var (created, path) = Open(processId);
-        return new ProcessEntry(processId, parentId, created, path ?? exeName, session);
+        var result = new List<ProcessEntry>();
+        var size = 512u * 1024;
+        while (true)
+        {
+            var buffer = (byte*)NativeMemory.Alloc(size);
+            try
+            {
+                var status = NtQuerySystemInformation(SystemProcessInformation, buffer, size, &size);
+                if (status == StatusInfoLengthMismatch)
+                {
+                    // Processes started between the calls; leave headroom for the next ones.
+                    size += 64 * 1024;
+                    continue;
+                }
+
+                if (status != 0) throw new InvalidOperationException($"NtQuerySystemInformation(SystemProcessInformation) failed with NTSTATUS 0x{status:X8}.");
+
+                var offset = 0u;
+                while (true)
+                {
+                    var entry = (SYSTEM_PROCESS_INFORMATION*)(buffer + offset);
+                    var name = entry->ImageName.Length == 0 ? null : new string(entry->ImageName.Buffer, 0, entry->ImageName.Length / sizeof(char));
+                    result.Add(new ProcessEntry((int)entry->UniqueProcessId, (int)entry->InheritedFromUniqueProcessId, entry->CreateTime, name, (int)entry->SessionId));
+                    if (entry->NextEntryOffset == 0) return result;
+                    offset += entry->NextEntryOffset;
+                }
+            }
+            finally
+            {
+                NativeMemory.Free(buffer);
+            }
+        }
     }
 
-    private static (long CreateTime, string? Path) Open(int processId)
-    {
-        var process = OpenProcess(ProcessQueryLimitedInformation, false, (uint)processId);
-        if (process == 0) return (0, null);
-        try
-        {
-            var created = GetProcessTimes(process, out var creation, out _, out _, out _) ? creation : 0;
-            var buffer = stackalloc char[1024];
-            var length = 1024u;
-            var path = QueryFullProcessImageNameW(process, 0, buffer, &length) ? new string(buffer, 0, (int)length) : null;
-            return (created, path);
-        }
-        finally
-        {
-            CloseHandle(process);
-        }
-    }
-
-    private const uint SnapProcess = 0x2, ProcessQueryLimitedInformation = 0x1000;
-    private static readonly nint InvalidHandle = -1;
+    private const int SystemProcessInformation = 5, SystemProcessIdInformation = 88;
+    private const int StatusInfoLengthMismatch = unchecked((int)0xC0000004);
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct PROCESSENTRY32W
+    private struct UNICODE_STRING
     {
-        public uint dwSize, cntUsage, th32ProcessID;
-        public nint th32DefaultHeapID;
-        public uint th32ModuleID, cntThreads, th32ParentProcessID;
-        public int pcPriClassBase;
-        public uint dwFlags;
-        public fixed char szExeFile[260];
+        public ushort Length, MaximumLength;
+        public char* Buffer;
     }
 
-    [LibraryImport("kernel32.dll", SetLastError = true)] private static partial nint CreateToolhelp32Snapshot(uint flags, uint processId);
-    [LibraryImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool Process32FirstW(nint snapshot, PROCESSENTRY32W* entry);
-    [LibraryImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool Process32NextW(nint snapshot, PROCESSENTRY32W* entry);
-    [LibraryImport("kernel32.dll")] private static partial nint OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, uint processId);
-    [LibraryImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool GetProcessTimes(nint process, out long creation, out long exit, out long kernel, out long user);
-    [LibraryImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool QueryFullProcessImageNameW(nint process, uint flags, char* name, uint* length);
-    [LibraryImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool CloseHandle(nint handle);
-    [LibraryImport("kernel32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool ProcessIdToSessionId(uint processId, out uint sessionId);
+    /// <summary>
+    /// The head of one process record; the thread records that follow it are not read.
+    /// The fields up to <c>CreateTime</c> are what winternl.h calls <c>Reserved1</c>.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_PROCESS_INFORMATION
+    {
+        public uint NextEntryOffset, NumberOfThreads;
+        public long WorkingSetPrivateSize;
+        public uint HardFaultCount, NumberOfThreadsHighWatermark;
+        public ulong CycleTime;
+        public long CreateTime, UserTime, KernelTime;
+        public UNICODE_STRING ImageName;
+        public int BasePriority;
+        public nint UniqueProcessId, InheritedFromUniqueProcessId;
+        public uint HandleCount, SessionId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SYSTEM_PROCESS_ID_INFORMATION
+    {
+        public nint ProcessId;
+        public UNICODE_STRING ImageName;
+    }
+
+    [LibraryImport("ntdll.dll")] private static partial int NtQuerySystemInformation(int informationClass, void* information, uint length, uint* returnLength);
     [LibraryImport("kernel32.dll")] private static partial uint WTSGetActiveConsoleSessionId();
 }
 

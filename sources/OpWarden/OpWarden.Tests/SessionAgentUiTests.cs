@@ -25,7 +25,7 @@ public sealed partial class SessionAgentUiTests
     public async Task A_full_prompt_renders_and_allow_once_reaches_the_broker()
     {
         Assert.SkipUnless(Environment.GetEnvironmentVariable("OPWARDEN_UI_TESTS") == "1", "OPWARDEN_UI_TESTS is not 1.");
-        await using var broker = BrokerHarness.Start(Claude);
+        await using var broker = BrokerHarness.Start(Claude, sessionAgentPath: BuiltExecutables.SessionAgent);
         using var agent = StartAgent(broker.AgentPipeName);
         try
         {
@@ -47,7 +47,7 @@ public sealed partial class SessionAgentUiTests
     public async Task A_run_prompt_lists_its_references_and_disallow_once_denies()
     {
         Assert.SkipUnless(Environment.GetEnvironmentVariable("OPWARDEN_UI_TESTS") == "1", "OPWARDEN_UI_TESTS is not 1.");
-        await using var broker = BrokerHarness.Start(Claude);
+        await using var broker = BrokerHarness.Start(Claude, sessionAgentPath: BuiltExecutables.SessionAgent);
         using var agent = StartAgent(broker.AgentPipeName);
         try
         {
@@ -71,7 +71,7 @@ public sealed partial class SessionAgentUiTests
     public async Task An_unknown_caller_gets_only_the_once_buttons()
     {
         Assert.SkipUnless(Environment.GetEnvironmentVariable("OPWARDEN_UI_TESTS") == "1", "OPWARDEN_UI_TESTS is not 1.");
-        await using var broker = BrokerHarness.Start(CallerIdentity.Unknown);
+        await using var broker = BrokerHarness.Start(CallerIdentity.Unknown, sessionAgentPath: BuiltExecutables.SessionAgent);
         using var agent = StartAgent(broker.AgentPipeName);
         try
         {

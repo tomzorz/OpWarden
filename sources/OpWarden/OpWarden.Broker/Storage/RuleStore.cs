@@ -49,12 +49,49 @@ public sealed class RuleStore
         return store;
     }
 
-    public void Add(IEnumerable<Rule> rules)
+    public void Add(IEnumerable<Rule> rules) => Change(current => current with { Rules = [.. current.Rules, .. rules] });
+
+    /// <summary>
+    /// Deletes the first stored rule equal to <paramref name="rule"/>, and returns false
+    /// when none is.
+    /// </summary>
+    public bool Remove(Rule rule)
+    {
+        var removed = false;
+        Change(current =>
+        {
+            var index = current.Rules.ToList().IndexOf(rule);
+            if (index < 0) return null;
+            removed = true;
+            return current with { Rules = [.. current.Rules.Take(index), .. current.Rules.Skip(index + 1)] };
+        });
+        return removed;
+    }
+
+    /// <summary>
+    /// Marks a vault <c>prompt-always</c>, or clears the mark (REQ-RULE-17).
+    /// </summary>
+    public void SetPromptAlways(string vault, bool promptAlways) => Change(current =>
+    {
+        var marked = current.PromptAlwaysVaults.Contains(vault, StringComparer.OrdinalIgnoreCase);
+        if (marked == promptAlways) return null;
+        return current with
+        {
+            PromptAlwaysVaults = promptAlways
+                ? [.. current.PromptAlwaysVaults, vault]
+                : [.. current.PromptAlwaysVaults.Where(v => !string.Equals(v, vault, StringComparison.OrdinalIgnoreCase))],
+        };
+    });
+
+    /// <summary>
+    /// Applies one change to the verified rules and writes the result; a change that
+    /// returns null leaves the store as it is.
+    /// </summary>
+    private void Change(Func<RuleSet, RuleSet?> change)
     {
         lock (_lock)
         {
-            var current = Verified();
-            var next = current with { Rules = [.. current.Rules, .. rules] };
+            if (change(Verified()) is not { } next) return;
             var content = Serialize(next);
             SealedFile.Write(_path, SealName, content, _vault);
             Remember(next, content);
@@ -70,22 +107,6 @@ public sealed class RuleStore
         _tampered("The rules in broker memory no longer match their seal: something outside OpWarden changed the broker's memory. The rules were reloaded from disk.");
         Load();
         return _current;
-    }
-
-    /// <summary>
-    /// Marks a vault <c>prompt-always</c> (REQ-RULE-17).
-    /// </summary>
-    public void MarkPromptAlways(string vault)
-    {
-        lock (_lock)
-        {
-            var current = Verified();
-            if (current.PromptAlwaysVaults.Contains(vault, StringComparer.OrdinalIgnoreCase)) return;
-            var next = current with { PromptAlwaysVaults = [.. current.PromptAlwaysVaults, vault] };
-            var content = Serialize(next);
-            SealedFile.Write(_path, SealName, content, _vault);
-            Remember(next, content);
-        }
     }
 
     private void Load()

@@ -1,7 +1,6 @@
-using System.Collections.Concurrent;
 using System.IO.Pipes;
-using System.Runtime.InteropServices;
-using Microsoft.Win32.SafeHandles;
+using System.Security.Principal;
+using OpWarden.Broker.Pipes;
 using OpWarden.Core.Pipe;
 
 namespace OpWarden.Broker;
@@ -13,117 +12,53 @@ namespace OpWarden.Broker;
 /// <remarks>
 /// The verdict comes from <see cref="Decide"/>. Its cancellation token fires when the
 /// shim disconnects before the verdict, which is how a prompt for a killed caller gets
-/// abandoned (REQ-FAIL-5). The pipe still carries the default security descriptor; the
-/// user-only ACL arrives with trust hardening.
+/// abandoned (REQ-FAIL-5).
 /// </remarks>
-public sealed partial class ShimPipeServer : IAsyncDisposable
+public sealed class ShimPipeServer : IAsyncDisposable
 {
-    /// <param name="clientProcessId">The shim's process ID, read from the pipe itself: the anchor of caller resolution.</param>
+    /// <param name="client">The shim's process ID, the anchor of caller resolution, and its identity, for file checks made on its behalf.</param>
     /// <param name="abandoned">Fires when the shim disconnects, or when the broker shuts down.</param>
-    public delegate ValueTask<VerdictResponse> Decide(ShimRequest request, int clientProcessId, CancellationToken abandoned);
+    internal delegate ValueTask<VerdictResponse> Decide(ShimRequest request, PipeClient client, CancellationToken abandoned);
 
-    public delegate ValueTask CaptureReceived(ShimRequest request, ReadCapture capture, CancellationToken cancellationToken);
+    internal delegate ValueTask CaptureReceived(ShimRequest request, ReadCapture capture, CancellationToken cancellationToken);
 
-    private readonly string _pipeName;
+    private readonly PipeServer _server;
     private readonly Decide _decide;
     private readonly CaptureReceived _captureReceived;
-    private readonly Action<Exception> _connectionFailed;
-    private readonly CancellationTokenSource _stopping = new();
-    private readonly ConcurrentDictionary<Task, byte> _connections = new();
-    private Task? _acceptLoop;
 
-    public ShimPipeServer(string pipeName, Decide decide, CaptureReceived captureReceived, Action<Exception> connectionFailed)
+    internal ShimPipeServer(string pipeName, SecurityIdentifier user, Decide decide, CaptureReceived captureReceived, Action<Exception> connectionFailed)
     {
-        _pipeName = pipeName;
         _decide = decide;
         _captureReceived = captureReceived;
-        _connectionFailed = connectionFailed;
+        _server = new PipeServer(pipeName, user, ServeAsync, connectionFailed);
     }
 
-    /// <summary>
-    /// Starts listening. The first pipe instance exists when this returns, so a shim
-    /// started afterwards connects instead of finding no broker.
-    /// </summary>
-    public void Start()
-    {
-        if (_acceptLoop is not null) throw new InvalidOperationException($"The pipe server on '{_pipeName}' is already started.");
-        var first = CreateListener();
-        _acceptLoop = AcceptLoopAsync(first, _stopping.Token);
-    }
+    /// <inheritdoc cref="PipeServer.Start"/>
+    public void Start() => _server.Start();
 
-    public async ValueTask DisposeAsync()
-    {
-        await _stopping.CancelAsync().ConfigureAwait(false);
-        if (_acceptLoop is not null) await _acceptLoop.ConfigureAwait(false);
-        await Task.WhenAll(_connections.Keys).ConfigureAwait(false);
-        _stopping.Dispose();
-    }
-
-    private NamedPipeServerStream CreateListener() =>
-        new(_pipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-
-    private async Task AcceptLoopAsync(NamedPipeServerStream listener, CancellationToken cancellationToken)
-    {
-        try
-        {
-            while (true)
-            {
-                await listener.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
-                var connected = listener;
-
-                // The next instance is listening before this connection is served, so a
-                // burst of shims never finds the pipe busy.
-                listener = CreateListener();
-
-                var connection = ServeAsync(connected, cancellationToken);
-                _connections.TryAdd(connection, 0);
-                _ = connection.ContinueWith(done => _connections.TryRemove(done, out _), TaskScheduler.Default);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // Shutting down.
-        }
-        finally
-        {
-            await listener.DisposeAsync().ConfigureAwait(false);
-        }
-    }
+    public ValueTask DisposeAsync() => _server.DisposeAsync();
 
     private async Task ServeAsync(NamedPipeServerStream pipe, CancellationToken cancellationToken)
     {
-        await using (pipe.ConfigureAwait(false))
+        // Closing the pipe without a verdict, which any failure here does, is a deny on
+        // the shim's side (REQ-SHIM-6).
+        var request = await PipeProtocol.ReadRequestAsync(pipe, cancellationToken).ConfigureAwait(false);
+        if (request is null) return;
+
+        if (request.ProtocolVersion != PipeProtocol.Version)
         {
-            try
-            {
-                var request = await PipeProtocol.ReadRequestAsync(pipe, cancellationToken).ConfigureAwait(false);
-                if (request is null) return;
-
-                if (request.ProtocolVersion != PipeProtocol.Version)
-                {
-                    await PipeProtocol.WriteAsync(pipe, VerdictResponse.Deny($"the shim speaks pipe protocol {request.ProtocolVersion}, the broker speaks {PipeProtocol.Version}; reinstall OpWarden"), cancellationToken).ConfigureAwait(false);
-                    return;
-                }
-
-                var verdict = await DecideWatchingForDisconnectAsync(pipe, request, cancellationToken).ConfigureAwait(false);
-                if (verdict is null) return;
-                await PipeProtocol.WriteAsync(pipe, verdict, cancellationToken).ConfigureAwait(false);
-
-                if (!PipeProtocol.ExpectsCapture(request, verdict)) return;
-                var capture = await PipeProtocol.ReadCaptureAsync(pipe, cancellationToken).ConfigureAwait(false);
-                if (capture is not null) await _captureReceived(request, capture, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                // Shutting down.
-            }
-            catch (Exception e)
-            {
-                // One bad connection must not take the broker down. Closing the pipe
-                // without a verdict is a deny on the shim's side (REQ-SHIM-6).
-                _connectionFailed(e);
-            }
+            await PipeProtocol.WriteAsync(pipe, VerdictResponse.Deny($"the shim speaks pipe protocol {request.ProtocolVersion}, the broker speaks {PipeProtocol.Version}; reinstall OpWarden"), cancellationToken).ConfigureAwait(false);
+            return;
         }
+
+        using var client = PipeClient.Capture(pipe);
+        var verdict = await DecideWatchingForDisconnectAsync(pipe, request, client, cancellationToken).ConfigureAwait(false);
+        if (verdict is null) return;
+        await PipeProtocol.WriteAsync(pipe, verdict, cancellationToken).ConfigureAwait(false);
+
+        if (!PipeProtocol.ExpectsCapture(request, verdict)) return;
+        var capture = await PipeProtocol.ReadCaptureAsync(pipe, cancellationToken).ConfigureAwait(false);
+        if (capture is not null) await _captureReceived(request, capture, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -131,14 +66,14 @@ public sealed partial class ShimPipeServer : IAsyncDisposable
     /// between its request and the verdict, so that read completes only when the shim
     /// disconnects; it then cancels the decision. Returns null when the shim is gone.
     /// </summary>
-    private async Task<VerdictResponse?> DecideWatchingForDisconnectAsync(NamedPipeServerStream pipe, ShimRequest request, CancellationToken stopping)
+    private async Task<VerdictResponse?> DecideWatchingForDisconnectAsync(NamedPipeServerStream pipe, ShimRequest request, PipeClient client, CancellationToken stopping)
     {
         using var abandoned = CancellationTokenSource.CreateLinkedTokenSource(stopping);
         using var stopWatching = new CancellationTokenSource();
         var watcher = WatchAsync(pipe, abandoned, stopWatching.Token);
         try
         {
-            return await _decide(request, ClientProcessId(pipe), abandoned.Token).ConfigureAwait(false);
+            return await _decide(request, client, abandoned.Token).ConfigureAwait(false);
         }
         finally
         {
@@ -166,13 +101,4 @@ public sealed partial class ShimPipeServer : IAsyncDisposable
             await abandoned.CancelAsync().ConfigureAwait(false);
         }
     }
-
-    private static int ClientProcessId(NamedPipeServerStream pipe) =>
-        GetNamedPipeClientProcessId(pipe.SafePipeHandle, out var processId)
-            ? (int)processId
-            : throw new IOException($"GetNamedPipeClientProcessId failed ({Marshal.GetLastPInvokeError()}).");
-
-    [LibraryImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool GetNamedPipeClientProcessId(SafePipeHandle pipe, out uint clientProcessId);
 }

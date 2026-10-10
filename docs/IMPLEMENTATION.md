@@ -30,20 +30,21 @@ Serialization is source-generated `System.Text.Json` everywhere. Reflection-base
 
 Step 5 builds on the service-account spike's results, summarised under "What the service account needs".
 
-## AOT everywhere, for now
+## AOT everywhere
 
-Section 3 and section 14 step 1 make all three executables NativeAOT, and that stands. REQ-SHIM-8 (under 50 ms on a rule hit) is the only hard reason, and it binds the shim alone, so the broker and session agent could run JIT. The current lean is to keep them AOT and write the prompt and management window in raw Win32, because the UI is small. Settle it when the session agent is built: if raw Win32 cannot carry the per-field pin/wildcard controls of REQ-RULE-7 without pain, a JIT session agent with WPF needs a spec amendment first.
+Section 3 and section 14 step 1 make all three executables NativeAOT. REQ-SHIM-8 (under 50 ms on a rule hit) is the only hard reason, and it binds the shim alone, but the broker and session agent are AOT too: the session agent's prompt, with the per-field pin/wildcard controls of REQ-RULE-7, is raw Win32, and the broker drives the service API and every Win32 call through `LibraryImport`. A JIT session agent with WPF would need a spec amendment first.
 
 ## Win32 map
 
-- **Pipe client identity:** `GetNamedPipeClientProcessId` on each connection. It anchors caller resolution (the walk starts at the shim's PID) and session-agent pinning (REQ-TRUST-4). Secure the pipe with an explicit `PipeSecurity`: the interactive user's SID gets connect, nothing wider.
-- **Live parent chain:** `CreateToolhelp32Snapshot` for parent PIDs, `GetProcessTimes` for the started-before check (REQ-CALL-6, REQ-CALL-11).
-- **Process-creation events:** ETW `Microsoft-Windows-Kernel-Process`. The spikes drove it through `logman` and `wevtutil`; the broker needs a real consumer. `Microsoft.Diagnostics.Tracing.TraceEvent` is the comfortable route and is a dependency (sign-off needed); WMI `Win32_ProcessStartTrace` needs no package but its delivery was not measured.
+- **Pipe client identity:** `GetNamedPipeClientProcessId` on each connection. It anchors caller resolution (the walk starts at the shim's PID) and session-agent pinning (REQ-TRUST-4). After the first message, `NamedPipeServerStream.RunAsClient` takes the client's token: the broker reads the agent hosts' executables as that user (REQ-CALL-24), and the management pipe asks it the elevation question.
+- **Pipe security:** every broker pipe comes from `NamedPipeServerStreamAcl.Create` with the broker's account at full control, the configured user SID at read/write (which leaves out `CreateNewInstance`), and a deny for the `NETWORK` SID (REQ-TRUST-9). The first instance is created with `FirstPipeInstance`, and a listener exists at all times, so the name is never free for a squatter (REQ-TRUST-10).
+- **Process facts:** `NtQuerySystemInformation`, class 5 (`SystemProcessInformation`) for parent PIDs, creation times and sessions, class 88 (`SystemProcessIdInformation`) for image paths. Neither opens the process, which the service account could not do for any user process (REQ-CALL-25). Class 88 is undocumented but stable since Vista; Process Explorer and psutil rely on it.
+- **Process-creation events:** a real-time ETW session on `Microsoft-Windows-Kernel-Process`, consumed through `advapi32` P/Invoke (`StartTrace`, `EnableTraceEx2`, `OpenTrace`, `ProcessTrace`), with each event decoded by the layout its manifest gives for its version (REQ-CALL-21).
 - **Authenticode** (REQ-CALL-14): `WinVerifyTrust` with revocation checks configured never to touch the network, plus `CryptQueryObject` to read the signer name. Cache verdicts keyed by path, size and modification time.
-- **Elevation check** (REQ-TRUST-5): `ImpersonateNamedPipeClient`, open the thread token, `GetTokenInformation(TokenElevation)`, revert. Only rule mutations need this; prompt decisions must not (REQ-TRUST-6).
+- **Elevation check** (REQ-TRUST-5): `WindowsPrincipal.IsInRole(Administrator)` on the management client's token. A UAC-filtered token holds Administrators deny-only, so only an elevated token passes. Only rule mutations need this; prompt decisions must not (REQ-TRUST-6), and a cache flush takes access away, so it needs none.
 - **Cache memory** (REQ-CACHE-1/2, REQ-CACHE-14): values in `NativeMemory.Alloc` buffers, `VirtualLock`ed, encrypted in place with `CryptProtectMemory`, zeroed on delete. Managed arrays move under the GC and can be paged before a lock call ever sees them.
 - **Integrity vault** (REQ-INT-2): `CryptProtectData` / `CryptUnprotectData` through P/Invoke, which avoids the `ProtectedData` package. Under the service account the vault decrypts only for `NT SERVICE\OpWarden`.
-- **Service registration:** `sc.exe create OpWarden binPath= ... obj= "NT SERVICE\OpWarden" start= auto`. The virtual account exists implicitly; grant it the data-directory ACLs from REQ-TRUST-2 at install time.
+- **Service registration:** `sc.exe create OpWarden binPath= "\"<install>\OpWarden.Broker.exe\" --service --config \"<install>\broker.json\"" obj= "NT SERVICE\OpWarden" start= auto`. The broker drives the service API itself (`StartServiceCtrlDispatcherW`, an `[UnmanagedCallersOnly]` service main and handler), which keeps the hosting package and its dependency injection stack out of the AOT binary. The virtual account exists implicitly; grant it the data-directory ACLs from REQ-TRUST-2 at install time, and write the user's SID into `broker.json` (REQ-TRUST-12). Run without `--service`, the same binary is the console broker for development.
 
 ## What the service account needs
 

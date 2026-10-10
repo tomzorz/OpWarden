@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Threading.Channels;
 using OpWarden.Broker;
@@ -6,14 +7,14 @@ using OpWarden.Broker.Cache;
 using OpWarden.Broker.Callers;
 using OpWarden.Broker.Storage;
 using OpWarden.Core.Agent;
+using OpWarden.Core.Management;
 using OpWarden.Core.Rules;
 
 namespace OpWarden.Tests;
 
 /// <summary>
 /// The whole broker on pipes and files of its own, assembled by <see cref="BrokerHost"/>
-/// exactly as the console host assembles it. Only the caller resolver is the test's,
-/// until the process map exists.
+/// exactly as the console host assembles it. Only the caller resolver is the test's.
 /// </summary>
 internal sealed class BrokerHarness : IAsyncDisposable
 {
@@ -21,17 +22,28 @@ internal sealed class BrokerHarness : IAsyncDisposable
     private readonly bool _ownsData;
     private readonly BrokerHost _host;
 
-    private BrokerHarness(DirectoryInfo data, bool ownsData, TimeSpan promptTimeout, CallerIdentity caller, IEnumerable<Rule> rules)
+    private BrokerHarness(DirectoryInfo data, bool ownsData, TimeSpan promptTimeout, CallerIdentity caller, IEnumerable<Rule> rules, string? sessionAgentPath)
     {
         (_data, _ownsData) = (data, ownsData);
-        _host = BrokerHost.Start(new BrokerHostOptions(BuiltExecutables.Probe, data.FullName, ShimPipeName, AgentPipeName, promptTimeout, _ => new CallerResolution(caller, ["test-caller(0)"]), ConnectionErrors.Add));
+        using var self = WindowsIdentity.GetCurrent();
+        _host = BrokerHost.Start(new BrokerHostOptions(
+            BuiltExecutables.Probe,
+            data.FullName,
+            self.User!,
+            sessionAgentPath ?? Environment.ProcessPath!,
+            Pipes,
+            promptTimeout,
+            _ => new CallerResolution(caller, ["test-caller(0)"]),
+            ConnectionErrors.Add));
         var seed = rules.ToList();
         if (seed.Count > 0) Rules.Add(seed);
     }
 
-    public string ShimPipeName { get; } = $"OpWarden-test-{Guid.NewGuid():N}";
+    public BrokerPipeNames Pipes { get; } = NewPipeNames();
 
-    public string AgentPipeName { get; } = $"OpWarden-test-agent-{Guid.NewGuid():N}";
+    public string ShimPipeName => Pipes.Shim;
+
+    public string AgentPipeName => Pipes.Agent;
 
     public RuleStore Rules => _host.Rules;
 
@@ -45,13 +57,31 @@ internal sealed class BrokerHarness : IAsyncDisposable
 
     private string AuditPath => Path.Combine(_data.FullName, "audit.jsonl");
 
-    public static BrokerHarness Start(CallerIdentity caller, IEnumerable<Rule>? rules = null, TimeSpan? promptTimeout = null) =>
-        new(Directory.CreateTempSubdirectory("opwarden-broker-"), true, promptTimeout ?? TimeSpan.FromSeconds(20), caller, rules ?? []);
+    /// <param name="sessionAgentPath">The executable the broker pins; by default the test process itself, so <see cref="ConnectAgentAsync"/> is pinned.</param>
+    public static BrokerHarness Start(CallerIdentity caller, IEnumerable<Rule>? rules = null, TimeSpan? promptTimeout = null, string? sessionAgentPath = null) =>
+        new(Directory.CreateTempSubdirectory("opwarden-broker-"), true, promptTimeout ?? TimeSpan.FromSeconds(20), caller, rules ?? [], sessionAgentPath);
 
     /// <summary>
     /// Starts a broker on a data directory the test owns, to restart over the same files.
     /// </summary>
-    public static BrokerHarness StartIn(DirectoryInfo data, CallerIdentity caller) => new(data, false, TimeSpan.FromSeconds(20), caller, []);
+    public static BrokerHarness StartIn(DirectoryInfo data, CallerIdentity caller) => new(data, false, TimeSpan.FromSeconds(20), caller, [], null);
+
+    public static BrokerPipeNames NewPipeNames()
+    {
+        var id = Guid.NewGuid().ToString("N");
+        return new($"OpWarden-test-{id}", $"OpWarden-test-agent-{id}", $"OpWarden-test-manage-{id}");
+    }
+
+    /// <summary>
+    /// A management-window connection over the real management protocol.
+    /// </summary>
+    public async Task<ManagementResponse> ManageAsync(ManagementRequest request)
+    {
+        await using var pipe = new NamedPipeClientStream(".", Pipes.Management, PipeDirection.InOut, PipeOptions.Asynchronous);
+        await pipe.ConnectAsync(5000);
+        await ManagementProtocol.WriteAsync(pipe, request, CancellationToken.None);
+        return (await ManagementProtocol.ReadResponseAsync(pipe, CancellationToken.None))!;
+    }
 
     public Task<ShimRun> RunShimAsync(IEnumerable<string> args, IReadOnlyDictionary<string, string>? environment = null) =>
         ShimHarness.RunShimAsync(ShimPipeName, args, environment);
@@ -80,6 +110,11 @@ internal sealed class BrokerHarness : IAsyncDisposable
 
         return entries;
     }
+
+    /// <summary>
+    /// The audit entries of one event type, such as <c>invocation</c>.
+    /// </summary>
+    public IReadOnlyList<JsonElement> AuditEntries(string eventName) => [.. AuditEntries().Where(e => e.GetProperty("event").GetString() == eventName)];
 
     public async ValueTask DisposeAsync()
     {

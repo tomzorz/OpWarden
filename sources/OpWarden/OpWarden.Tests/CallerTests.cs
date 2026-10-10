@@ -209,11 +209,14 @@ public sealed class CallerResolverTests
     }
 
     [Fact]
-    public void A_claude_exe_with_another_signer_is_no_agent_host()
+    public void A_claude_exe_with_another_signer_ends_the_walk_as_unknown()
     {
+        // Walking past it would reach explorer and hand an impostor, or a real agent whose
+        // signature could not be read, the interactive user's rules.
         var result = Resolve([P(10, 0, 10, Explorer), P(30, 10, 30, @"C:\Temp\claude.exe"), P(1000, 30, 50, @"C:\OpWarden\op.exe")]);
 
-        Assert.Equal(CallerIdentity.InteractiveUser, result.Caller);
+        Assert.Equal(CallerIdentity.Unknown, result.Caller);
+        Assert.Equal("(end: not signed by Anthropic, PBC)", result.Chain[^1]);
     }
 
     [Fact]

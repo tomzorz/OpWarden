@@ -26,6 +26,10 @@ Do not use: wrapper, proxy, interceptor.
 The privileged OpWarden process, installed as a Windows service under the service account, that owns the rule store, the audit log, the cache, the bypass watcher, caller resolution, and verdicts.
 Do not use: service, daemon, server.
 
+### broker pipe (noun)
+Each of the three named pipes the broker serves: the shim pipe, which shims connect to, the session-agent pipe, which the session agent connects to, and the management pipe, which the management window connects to.
+Do not use: OpWarden pipe, broker socket.
+
 ### session agent (noun)
 The unprivileged OpWarden process in the interactive user's logon session that renders prompts, notifications, and the management window.
 Do not use: UI, tray app, agent (alone).
@@ -137,7 +141,7 @@ The shim runs once per op CLI invocation and stays cheap. The broker runs contin
 
 The shim keeps the op CLI's identity intact. The op CLI, not the shim, connects to the desktop app's named pipe, so the desktop app's mutual Authenticode verification still passes unchanged. The desktop app never sees OpWarden.
 
-**Transport decision (2026-08-15):** shim, session agent, and broker communicate over local named pipes. The broker reads each pipe client's process identifier from the pipe, and that identifier anchors caller resolution and session-agent pinning. A loopback TCP port was rejected because port-to-process mapping is racy.
+**Transport decision (2026-08-15):** shim, session agent, and broker communicate over local named pipes. The broker reads each pipe client's process identifier from the pipe, and that identifier anchors caller resolution and session-agent pinning. A loopback TCP port was rejected because port-to-process mapping is racy. The broker serves three broker pipes: the shim pipe, the session-agent pipe, and the management pipe.
 
 The chosen implementation language is C# compiled with NativeAOT, which produces a single self-contained executable with near-native cold-start latency. Cold-start latency matters because the shim wraps every op CLI invocation, and agents invoke the op CLI in bursts.
 
@@ -246,6 +250,14 @@ REQ-CALL-21: The broker MUST decode each process-creation event by the layout th
 REQ-CALL-22: For REQ-CALL-15, the interactive logon session's shell is a process whose image is `explorer.exe` in the Windows directory, and that runs in the active console session.
 
 **Event-access decision (2026-10-04):** a virtual service account receives process-creation events only with two grants, which the install procedure makes and the rollback reverts: membership in Performance Log Users, without which Windows refuses to start the trace session, and the right to enable `Microsoft-Windows-Kernel-Process`, granted with `EventAccessControl`, without which Windows refuses to enable the provider. The provider carries access control of its own, so membership alone is not enough. The service-account spike measured all three states under the service account: the trace session refused without membership, the provider refused with membership alone, and four process-start events in five seconds with both grants.
+
+**Service-account access decision (2026-10-05):** the service account can neither read the interactive user's profile nor open the interactive user's processes, because the default access lists that Windows gives both admit only the user, SYSTEM, and Administrators. The op CLI, Claude Code, and OpenCode commonly install under the profile. Without REQ-CALL-24, every signature check fails, and without REQ-CALL-25, no user process has a creation time and none proves a parent. The access lists are Windows defaults, not a measurement; the install acceptance in section 14, steps 10 to 12, verifies the result under the real service.
+
+REQ-CALL-23: When a process in the walk carries the file name of an agent-host entry that names a signer, and the signature of the process's executable does not verify against that signer, the broker MUST end the walk, and the broker MUST classify the caller identity as `unknown`. The reason is that the walk otherwise continues to the logon shell, and an impostor, or an agent whose executable the broker cannot read, inherits the interactive user's rules.
+
+REQ-CALL-24: The broker MUST read each executable for REQ-CALL-14 under the identity of the shim's pipe client.
+
+REQ-CALL-25: The broker MUST read the parent process identifier, the creation time, the session, and the image path of each process without opening that process.
 
 ## 6. Requirements: command classification
 
@@ -396,6 +408,16 @@ REQ-TRUST-6: A prompt decision MUST NOT require elevation.
 
 REQ-TRUST-7: The broker MUST record each rule change in the audit log, with the source stated as exactly one of `prompt` or `management`.
 
+REQ-TRUST-8: The broker MUST record each session-agent connection that the broker pins, and each session-agent connection that the broker refuses, in the audit log. Each entry MUST state the client process's image path, process identifier, and session. The reason is that section 16 relies on the audit log to reveal a replaced session agent.
+
+REQ-TRUST-9: The broker MUST let exactly two accounts connect to each broker pipe: the service account and the interactive user. The broker MUST NOT let the interactive user create an instance of a broker pipe. The broker MUST refuse each connection from a network logon.
+
+REQ-TRUST-10: When a pipe with the name of a broker pipe already exists at broker start, the broker MUST NOT start, and the broker MUST report that pipe's name. The reason is that the process that holds the name otherwise receives the broker's clients.
+
+REQ-TRUST-11: The broker MUST record each rule mutation that REQ-TRUST-5 refuses in the audit log.
+
+REQ-TRUST-12: The broker configuration MUST name the interactive user by security identifier. The reason is that the broker runs as the service account, and REQ-TRUST-9 needs the other account.
+
 ### 8.1 Integrity
 
 **Integrity decision (2026-10-03):** the broker seals the state it decides with, on disk and in memory, so a change that did not come from the broker is detected. Tamás asked for this as a step beyond a human-readable file edit or a memory editor such as Cheat Engine. Under the service account the seal key is out of the interactive user's reach, and the seal adds to the file permissions of REQ-TRUST-2. In the console broker the key belongs to the user who started it, so the seal stops casual edits only. A decompiled broker defeats it in either mode.
@@ -527,7 +549,7 @@ Preconditions: the op CLI is installed, the desktop-app integration works, and t
 5. Grant `NT SERVICE\OpWarden` the right to enable `Microsoft-Windows-Kernel-Process` with `EventAccessControl`. Before the grant, save the provider's security value under `HKLM\SYSTEM\CurrentControlSet\Control\WMI\Security`, or record that it is absent.
 6. Register the session agent to start at each logon (REQ-TRUST-3).
 7. Set the file permissions from REQ-TRUST-2 on the rule store and the audit log.
-8. Record the op CLI's directory in the broker configuration as the real op CLI path.
+8. Record the op CLI's path, and the interactive user's security identifier, in the broker configuration (REQ-TRUST-12).
 9. Place the shim directory on `PATH` ahead of the op CLI directory.
 10. Sign out, then sign in. The session agent starts (REQ-TRUST-3).
 11. Open a new terminal. Run `op --version`. The prompt appears, classified as a `meta` action from the interactive user.
@@ -554,6 +576,8 @@ Rollback:
 - PATH bypass: a caller that runs the op CLI by its full path bypasses the shim. The bypass watcher records the start and notifies the session agent; nothing blocks the invocation. The procedure in section 13 closes the cold-session case at the biometric prompt.
 - Elevated attacker: a process with an elevated Administrators token can stop the broker, edit the rule store, and read broker memory. OpWarden's privilege separation targets non-elevated same-user processes, which is what agents are.
 - Session-agent replacement: the pinning in REQ-TRUST-4 raises the bar against decision forgery. A same-user process can still inject code into the pinned session agent, or kill it and race a copy of the installed executable to the pin. Both are detectable through the audit log, not preventable.
+
+- Pipe exhaustion: a same-user process can hold every instance of a broker pipe open, and the broker then answers no new client until instances close. The failure is a `deny` at the shim, never an `allow`.
 - Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file, but REQ-CACHE-14 means only ciphertext reaches it.
 - Audit-log tail between anchors: REQ-AUD-9 records the entry count at intervals, so deleting the entries written since the last count goes unnoticed. The window is at most 30 seconds of entries.
 - Integrity in the console broker: the console broker runs as the interactive user, so the integrity key of REQ-INT-2 and the in-memory key of REQ-INT-6 are within that user's reach. A process that decrypts the vault, or reads the in-memory key from broker memory, can forge a seal. Section 8.1 targets file edits and memory edits, and the service account is what puts the keys out of reach.

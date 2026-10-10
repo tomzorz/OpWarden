@@ -2,8 +2,12 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
 
-    <!-- LibraryImport marshalling for the Win32 calls (pipe client identity, and more to come). -->
+    <!-- Spec section 14, step 1: all three executables are NativeAOT. -->
+    <PublishAot>true</PublishAot>
+
+    <!-- LibraryImport marshalling and pointers for the Win32 calls. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 

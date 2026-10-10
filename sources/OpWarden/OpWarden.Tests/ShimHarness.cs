@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Security.Principal;
 using System.Text;
 using OpWarden.Broker;
 using OpWarden.Core.Pipe;
@@ -18,12 +19,14 @@ internal sealed class ShimHarness : IAsyncDisposable
 
     private ShimHarness(Func<ShimRequest, VerdictResponse> verdict)
     {
+        using var self = WindowsIdentity.GetCurrent();
         _server = new ShimPipeServer(
             PipeName,
-            (request, clientProcessId, _) =>
+            self.User!,
+            (request, client, _) =>
             {
                 Requests.Enqueue(request);
-                ClientProcessIds.Enqueue(clientProcessId);
+                ClientProcessIds.Enqueue(client.ProcessId);
                 return ValueTask.FromResult(verdict(request));
             },
             (_, capture, _) =>
@@ -104,6 +107,8 @@ internal static class BuiltExecutables
     public static string Shim => Locate("OpWarden.Shim", Path.Combine("win-x64", "op.exe"));
 
     public static string Probe => Locate("OpWarden.Probe", "OpWarden.Probe.exe");
+
+    public static string Broker => Locate("OpWarden.Broker", Path.Combine("win-x64", "OpWarden.Broker.exe"));
 
     public static string SessionAgent => Locate("OpWarden.SessionAgent", Path.Combine("win-x64", "OpWarden.SessionAgent.exe"));
 
