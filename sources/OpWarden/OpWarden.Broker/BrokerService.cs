@@ -19,11 +19,16 @@ namespace OpWarden.Broker;
 public sealed record BrokerSettings(string OpPath);
 
 /// <summary>
+/// Who called, for the shim on the other end of <paramref name="client"/>.
+/// </summary>
+internal delegate ValueTask<CallerResolution> ResolveCaller(PipeClient client);
+
+/// <summary>
 /// Turns one shim request into a verdict: resolve the caller, evaluate the rules, serve a
 /// cached answer or prompt when they do not settle it, store the rules the user chose,
 /// and record all of it in the audit log.
 /// </summary>
-public sealed class BrokerService(
+internal sealed class BrokerService(
     BrokerSettings settings,
     RuleStore rules,
     AliasStore aliases,
@@ -33,18 +38,15 @@ public sealed class BrokerService(
     SecretCache cache,
     IntegrityAlarm alarm,
     Action<AgentMessage> notify,
-    Func<int, CallerResolution> resolveCaller)
+    ResolveCaller resolveCaller)
 {
     // The cache grant an allowed read earned, held until its capture arrives on the same
     // connection. Keyed by the request object, which the pipe server hands to both calls.
     private readonly ConditionalWeakTable<ShimRequest, Grant> _grants = [];
 
-    internal async ValueTask<VerdictResponse> DecideAsync(ShimRequest request, PipeClient client, CancellationToken abandoned)
+    public async ValueTask<VerdictResponse> DecideAsync(ShimRequest request, PipeClient client, CancellationToken abandoned)
     {
-        // As the shim's user: the agent hosts' executables sit in that user's profile,
-        // which the service account cannot read, and an unreadable signature would make
-        // every agent unknown (REQ-CALL-14).
-        var resolution = client.RunAs(() => resolveCaller(client.ProcessId));
+        var resolution = await resolveCaller(client).ConfigureAwait(false);
         var caller = resolution.Caller;
         var cacheKey = IsCacheable(request, caller) ? CacheKey.For(caller, request.Arguments) : null;
         var evaluation = Evaluate(caller, request);

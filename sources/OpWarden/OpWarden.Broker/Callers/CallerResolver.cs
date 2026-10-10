@@ -12,17 +12,29 @@ public sealed record AgentHost(string Name, string FileName, string? Signer);
 /// <summary>
 /// Who called, and the ancestor chain that says so (REQ-CALL-17).
 /// </summary>
-public sealed record CallerResolution(CallerIdentity Caller, IReadOnlyList<string> Chain);
+/// <param name="AwaitsEvents">True when the walk stopped at a parent whose start or exit the event stream has not delivered yet: walking again after the events arrive may get further (REQ-CALL-26).</param>
+public sealed record CallerResolution(CallerIdentity Caller, IReadOnlyList<string> Chain, bool AwaitsEvents = false)
+{
+    public const string AwaitingMarker = "(waiting for process events)";
+
+    /// <summary>
+    /// This resolution as the last word: a walk still waiting for events ends where it
+    /// stopped, for <paramref name="reason"/>.
+    /// </summary>
+    public CallerResolution Final(string reason) =>
+        AwaitsEvents ? new(CallerIdentity.Unknown, [.. Chain.Take(Chain.Count - 1), $"(end: {reason})"]) : this;
+}
 
 /// <summary>
 /// Resolves the shim's caller by walking its ancestry (spec section 5.2): through the
-/// process map first, through the live process table where the map has no entry, and
-/// stopping at the first hop that cannot be proven.
+/// running processes where the parent still runs, through the process map where it has
+/// exited, and stopping at the first hop that cannot be proven.
 /// </summary>
 /// <remarks>
 /// <code>
 ///   shim ─► parent ─► … ─► agent host?  ─► … ─► logon shell?
-///           (map entry, else live entry started before its child)
+///           (the running process that started first, else a map
+///            entry proven to be running when the child started)
 ///
 ///   an agent host anywhere on the way ........ that agent, the nearest one  REQ-CALL-13
 ///   an agent host's name, wrong signature .... unknown                      REQ-CALL-14
@@ -78,8 +90,14 @@ public sealed class CallerResolver(
 
             if (IsLogonShell(current, session)) return new(CallerIdentity.InteractiveUser, chain);
 
-            if (Parent(current) is not { } parent)
+            if (Parent(current, out var awaitsEvents) is not { } parent)
             {
+                if (awaitsEvents)
+                {
+                    chain.Add(CallerResolution.AwaitingMarker);
+                    return new(CallerIdentity.Unknown, chain, AwaitsEvents: true);
+                }
+
                 chain.Add("(end: no provable parent)");
                 return new(CallerIdentity.Unknown, chain);
             }
@@ -92,15 +110,35 @@ public sealed class CallerResolver(
     }
 
     /// <summary>
-    /// The parent from the process map, or else from the live table, but only a live
-    /// parent that started before its child: a later start is a reused process ID
-    /// (REQ-CALL-11).
+    /// The parent of <paramref name="child"/> (REQ-CALL-9), or null with
+    /// <paramref name="awaitsEvents"/> set when the events that would name it are still on
+    /// their way.
     /// </summary>
-    private ProcessEntry? Parent(ProcessEntry child)
+    private ProcessEntry? Parent(ProcessEntry child, out bool awaitsEvents)
     {
-        if (map.ParentOf(child) is { } recorded) return recorded;
-        if (child.ParentId is ProcessEntry.UnknownParent or 0) return null;
-        return liveProcess(child.ParentId) is { CreateTime: > 0 } live && child.CreateTime > 0 && live.CreateTime <= child.CreateTime ? live : null;
+        awaitsEvents = false;
+        if (child.ParentId is ProcessEntry.UnknownParent or 0 || child.CreateTime == 0) return null;
+
+        // A running process with the parent's ID that started first is the parent. Two
+        // running processes never share an ID, and a later holder of the ID started after
+        // the true parent exited, so after the child too (REQ-CALL-11).
+        if (liveProcess(child.ParentId) is { CreateTime: > 0 } live && live.CreateTime <= child.CreateTime) return live;
+
+        switch (map.FindParent(child.ParentId, child.CreateTime))
+        {
+            case ParentLookup.Found found:
+                return found.Entry;
+            case ParentLookup.ExitUnreported:
+                // Nothing running fits, so the entry has exited; whether before or after
+                // the child started, only its exit event can say.
+                awaitsEvents = true;
+                return null;
+            default:
+                // A parent of a process younger than the snapshot is in the snapshot or in
+                // the event stream; if not yet in the map, its start is still on the way.
+                awaitsEvents = child.CreateTime > map.SeededAt;
+                return null;
+        }
     }
 
     /// <summary>

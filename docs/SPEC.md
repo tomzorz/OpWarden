@@ -201,9 +201,9 @@ REQ-SHIM-10: When the broker returns cached output, the shim MUST write the cach
 
 ### 5.1 The process map
 
-REQ-CALL-1: The broker MUST subscribe to process-creation events for every process on the machine.
+REQ-CALL-1: The broker MUST subscribe to process-creation events and process-exit events for every process on the machine.
 
-REQ-CALL-2: For each process-creation event, the broker MUST store one entry, and that entry MUST hold the process identifier, the parent process identifier, the image path, and the creation time.
+REQ-CALL-2: For each process-creation event, the broker MUST store one entry, and that entry MUST hold the process identifier, the parent process identifier, the image path, and the creation time. For each process-exit event, the broker MUST record the exit time in the entry of the process that exited.
 
 REQ-CALL-3: For each process-creation event, the broker MUST do no work other than storing the entry. The broker MUST NOT resolve a caller while the broker handles the event. The broker MUST NOT read a file while the broker handles the event. The broker MUST NOT write a file while the broker handles the event. The reason is that a slow consumer causes the event source to drop events, and one dropped event makes one caller unresolvable for as long as that caller runs.
 
@@ -217,7 +217,9 @@ REQ-CALL-7: The broker MUST retain each entry that the ancestry of at least one 
 
 REQ-CALL-8: The broker MUST bound the process map with a maximum entry count. When the broker reaches that bound, the broker MUST record the fact in the audit log, and the broker MUST NOT record the deleted entries. The reason is that REQ-CALL-7 assumes the reachable set stays small, and a backstop MUST exist when that assumption fails.
 
-REQ-CALL-9: When the broker resolves the parent of a process that Windows created at time T, the broker MUST select the entry whose process identifier equals the parent process identifier and whose creation time is the latest creation time at or before T. The reason is that the process map retains entries for exited processes, and Windows reuses process identifiers.
+**Parent-resolution decision (2026-10-10):** the first run under the service recorded three wrong ancestor chains. In each, a short-lived process that a monitoring tool starts every second had held the parent's identifier earlier, and the broker named it as the parent. The event source delivers events up to a second late, so the true parent's creation event was still in transit. The old rule, the latest entry created at or before T, picked the earlier process. Every wrong chain still ended at the logon shell, so no verdict changed. The same mistake can hand an agent's invocation the interactive user's rules.
+
+REQ-CALL-9: When the broker resolves the parent of a process that Windows created at time T, the broker MUST select the running process whose identifier equals the parent process identifier, when that process started at or before T. When no running process qualifies, the broker MUST select the process-map entry whose identifier equals the parent process identifier, whose creation time is at or before T, and whose recorded exit time is at or after T. The broker MUST NOT select an entry whose exit time is not recorded. The reason is that Windows reuses process identifiers, and only an entry that ran at time T can be the parent.
 
 ### 5.2 Resolving one caller
 
@@ -260,6 +262,8 @@ REQ-CALL-23: When a process in the walk carries the file name of an agent-host e
 REQ-CALL-24: The broker MUST read each executable for REQ-CALL-14 under the identity of the shim's pipe client.
 
 REQ-CALL-25: The broker MUST read the parent process identifier, the creation time, the session, and the image path of each process without opening that process.
+
+REQ-CALL-26: When REQ-CALL-9 selects no parent for a process that started after the broker seeded the process map, the broker MUST flush the event session and resolve the parent again, until a parent qualifies or 2 seconds pass. When 2 seconds pass, the broker MUST end the walk at that process. The reason is that the missing parent's events are still in transit, and the wait is bounded so that a dropped event costs a prompt, not a hang.
 
 ## 6. Requirements: command classification
 

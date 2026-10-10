@@ -5,7 +5,7 @@ namespace OpWarden.Broker.Callers;
 
 /// <summary>
 /// A real-time ETW session on <c>Microsoft-Windows-Kernel-Process</c> that records every
-/// process start into the process map (REQ-CALL-1, REQ-CALL-2).
+/// process start and exit into the process map (REQ-CALL-1, REQ-CALL-2).
 /// </summary>
 /// <remarks>
 /// Raw ETW through P/Invoke, no package (decided 2026-10-04): StartTrace and EnableTraceEx2
@@ -80,7 +80,7 @@ public sealed unsafe partial class ProcessEventSession : IDisposable
                 return null;
             }
 
-            var provider = ProcessStartDecoder.Provider;
+            var provider = ProcessEventDecoder.Provider;
             status = EnableTraceEx2(session, &provider, EventControlCodeEnableProvider, TraceLevelInformation, KeywordProcess, 0, 0, null);
             if (status != 0)
             {
@@ -136,6 +136,23 @@ public sealed unsafe partial class ProcessEventSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Hands every buffered event to the consumer now, rather than at the next flush timer:
+    /// a walk waiting for a parent's events need not sit out the second (REQ-CALL-26).
+    /// </summary>
+    public void Flush()
+    {
+        var properties = Properties();
+        try
+        {
+            _ = ControlTraceW(_session, null, properties, EventTraceControlFlush);
+        }
+        finally
+        {
+            NativeMemory.Free(properties);
+        }
+    }
+
     public void Dispose()
     {
         if (_session == 0) return;
@@ -164,14 +181,23 @@ public sealed unsafe partial class ProcessEventSession : IDisposable
     [UnmanagedCallersOnly]
     private static void OnEvent(EVENT_RECORD* record)
     {
-        if (_active is not { } session) return;
-        if (record->EventHeader.EventDescriptor.Id != ProcessStartDecoder.EventId || record->EventHeader.ProviderId != ProcessStartDecoder.Provider) return;
+        if (_active is not { } session || record->EventHeader.ProviderId != ProcessEventDecoder.Provider) return;
 
         try
         {
             var payload = new ReadOnlySpan<byte>((void*)record->UserData, record->UserDataLength);
-            if (ProcessStartDecoder.Decode(record->EventHeader.EventDescriptor.Version, payload) is { } entry) session._map.Record(entry);
-            else Interlocked.Increment(ref session._undecodable);
+            var version = record->EventHeader.EventDescriptor.Version;
+            switch (record->EventHeader.EventDescriptor.Id)
+            {
+                case ProcessEventDecoder.StartEventId:
+                    if (ProcessEventDecoder.DecodeStart(version, payload) is { } entry) session._map.Record(entry);
+                    else Interlocked.Increment(ref session._undecodable);
+                    break;
+                case ProcessEventDecoder.StopEventId:
+                    if (ProcessEventDecoder.DecodeStop(version, payload) is { } exit) session._map.RecordExit(exit);
+                    else Interlocked.Increment(ref session._undecodable);
+                    break;
+            }
         }
         catch (Exception)
         {
@@ -222,7 +248,7 @@ public sealed unsafe partial class ProcessEventSession : IDisposable
 
     private const uint ErrorAlreadyExists = 183, ErrorAccessDenied = 5;
     private const uint WnodeFlagTracedGuid = 0x00020000, EventTraceRealTimeMode = 0x00000100;
-    private const uint EventTraceControlQuery = 0, EventTraceControlStop = 1, EventControlCodeEnableProvider = 1;
+    private const uint EventTraceControlQuery = 0, EventTraceControlStop = 1, EventTraceControlFlush = 3, EventControlCodeEnableProvider = 1;
     private const byte TraceLevelInformation = 4;
     private const ulong KeywordProcess = 0x10; // WINEVENT_KEYWORD_PROCESS
     private const uint ProcessTraceModeRealTime = 0x00000100, ProcessTraceModeEventRecord = 0x10000000;

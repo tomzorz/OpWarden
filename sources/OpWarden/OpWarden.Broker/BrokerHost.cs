@@ -68,11 +68,15 @@ public sealed class BrokerHost : IAsyncDisposable
         Aliases = aliasFile.Load();
         Cache = new SecretCache(alarm.Raise);
 
-        var resolveCaller = options.ResolveCaller;
-        if (resolveCaller is null)
+        ResolveCaller resolveCaller;
+        if (options.ResolveCaller is { } fixedResolution)
+        {
+            resolveCaller = client => ValueTask.FromResult(fixedResolution(client.ProcessId));
+        }
+        else
         {
             _callers = new CallerService(options.Agents ?? CallerService.DefaultAgents, _audit, _agent.Send);
-            resolveCaller = _callers.Resolve;
+            resolveCaller = _callers.ResolveAsync;
         }
 
         var prompts = new PromptQueue(10, options.PromptTimeout, _agent.Send);

@@ -1,4 +1,5 @@
 using OpWarden.Broker.Audit;
+using OpWarden.Broker.Pipes;
 using OpWarden.Core.Agent;
 
 namespace OpWarden.Broker.Callers;
@@ -27,7 +28,8 @@ public sealed class CallerService : IDisposable
         // Subscribe before seeding, so no process starts in the gap between the two
         // (REQ-CALL-5); an entry seen twice is stored once.
         _events = ProcessEventSession.TryStart(_map, out var failure);
-        _map.Seed(LiveProcesses.Snapshot());
+        var takenAt = DateTime.UtcNow.ToFileTimeUtc();
+        _map.Seed(LiveProcesses.Snapshot(), takenAt);
 
         if (failure is not null)
         {
@@ -53,7 +55,14 @@ public sealed class CallerService : IDisposable
 
     public bool ReceivesEvents => _events is not null;
 
-    public CallerResolution Resolve(int shimProcessId) => _resolver.Resolve(shimProcessId);
+    /// <summary>
+    /// Resolves the shim's caller, waiting for late process events when the walk needs
+    /// them (REQ-CALL-26). Each walk runs as the shim's user: the agent hosts' executables
+    /// sit in that user's profile, which the service account cannot read, and an
+    /// unreadable signature would make every agent unknown (REQ-CALL-14, REQ-CALL-24).
+    /// </summary>
+    internal ValueTask<CallerResolution> ResolveAsync(PipeClient client) =>
+        EventCatchUp.ResolveAsync(() => client.RunAs(() => _resolver.Resolve(client.ProcessId)), _events is null ? null : _events.Flush);
 
     public void Dispose()
     {
