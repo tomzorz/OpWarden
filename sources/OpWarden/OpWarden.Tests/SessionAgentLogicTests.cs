@@ -10,8 +10,8 @@ namespace OpWarden.Tests;
 /// <summary>
 /// The session agent's logic that needs no desktop: how toasts fold a burst of reads
 /// together (REQ-RULE-39), which window a read came from and where its toast goes
-/// (REQ-RULE-41 to REQ-RULE-44), how the audit window follows the log, and the agent's
-/// arguments.
+/// (REQ-RULE-41 to REQ-RULE-44), what the status window lists and where it opens, how the
+/// audit window follows the log, and the agent's arguments.
 /// </summary>
 public sealed class SessionAgentLogicTests : IDisposable
 {
@@ -197,6 +197,51 @@ public sealed class SessionAgentLogicTests : IDisposable
     }
 
     [Fact]
+    public void The_status_window_lists_the_last_invocations_newest_first_and_counts_them_all()
+    {
+        var recent = new RecentInvocations(3);
+
+        recent.Add([Entry("invocation", 1), Entry("rule-change", 2), Entry("invocation", 3)]);
+        recent.Add([Entry("invocation", 4), Entry("invocation", 5)]);
+
+        Assert.Equal(4, recent.Total);
+        Assert.Equal([5, 4, 3], recent.NewestFirst.Select(r => r.Timestamp.Second));
+        Assert.Equal("Showing the last 3 of 4 invocations.", recent.Summary);
+    }
+
+    [Fact]
+    public void A_status_list_that_shows_every_invocation_says_nothing_more()
+    {
+        var recent = new RecentInvocations(8);
+
+        recent.Add([Entry("invocation", 1)]);
+
+        Assert.Equal("", recent.Summary);
+    }
+
+    [Fact]
+    public void The_status_window_opens_above_the_notification_area_and_grows_upward()
+    {
+        var opened = StatusWindow.FrameTopLeft(new Rect(500, 500, 520, 380), Screen, inCorner: true, cornerGap: 12);
+
+        Assert.Equal(new Point(1920 - 520 - 12, 1040 - 380 - 12), opened);
+
+        // The recent invocations arrive and the window grows: its bottom stays put.
+        var grown = StatusWindow.FrameTopLeft(new Rect(opened, new Size(520, 540)), Screen, inCorner: true, cornerGap: 12);
+        Assert.Equal(1040 - 12, grown.Y + 540);
+    }
+
+    [Fact]
+    public void A_status_window_the_user_moved_stays_put_unless_it_would_leave_the_work_area()
+    {
+        Assert.Equal(new Point(200, 100), StatusWindow.FrameTopLeft(new Rect(200, 100, 520, 540), Screen, inCorner: false, cornerGap: 12));
+        Assert.Equal(new Point(200, 1040 - 540), StatusWindow.FrameTopLeft(new Rect(200, 700, 520, 540), Screen, inCorner: false, cornerGap: 12));
+
+        // Taller than the work area, it keeps its title bar on screen.
+        Assert.Equal(0, StatusWindow.FrameTopLeft(new Rect(200, 300, 520, 1200), Screen, inCorner: false, cornerGap: 12).Y);
+    }
+
+    [Fact]
     public void The_audit_reader_returns_only_what_was_appended_and_waits_for_a_whole_line()
     {
         var log = Path.Combine(_scratch.FullName, "audit.jsonl");
@@ -259,6 +304,9 @@ public sealed class SessionAgentLogicTests : IDisposable
         Assert.Equal("--pipe a --manage-pipe m", options.PipeArguments);
         Assert.True(AgentOptions.Parse(["--manage"]).Manage);
     }
+
+    private static AuditRow Entry(string eventName, int second) =>
+        new(Noon.AddSeconds(second), eventName, "claude-code", "read", "Infra / tofu-state / passphrase", "Allow", "rule", [], [], "");
 
     private static string Line(string eventName, string? verdict)
     {

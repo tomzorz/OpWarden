@@ -175,6 +175,12 @@ internal static unsafe partial class Native
     }
 
     /// <summary>
+    /// A window's rectangle as SetWindowPos places it, invisible resize borders included;
+    /// null when the window is gone.
+    /// </summary>
+    public static Rect? WindowRectOf(nint window) => GetWindowRect(window, out var rect) ? rect.ToRect() : null;
+
+    /// <summary>
     /// The work area and scale of the monitor a window mostly covers.
     /// </summary>
     public static MonitorArea MonitorAreaOf(nint window) => AreaOf(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST));

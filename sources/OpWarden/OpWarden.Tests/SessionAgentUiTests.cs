@@ -235,6 +235,29 @@ public sealed partial class SessionAgentUiTests
         }
     }
 
+    [Fact]
+    public async Task The_status_window_caps_the_recent_invocations_and_stays_clear_of_the_taskbar()
+    {
+        Assert.SkipUnless(Enabled, "OPWARDEN_UI_TESTS is not 1.");
+        await using var broker = BrokerHarness.Start(Claude, [new Rule(Claude, OpAction.Read, null, null, null, Verdict.Allow)], sessionAgentPath: BuiltExecutables.SessionAgent);
+        for (var i = 0; i < 10; i++) Assert.Equal(0, (await broker.RunShimAsync(["read", $"op://Infra/postgres/password-{i}"])).ExitCode);
+        using var agent = StartAgent(broker, "status");
+        try
+        {
+            var status = await WaitForWindowAsync(agent, "StatusWindow");
+            var summary = await WaitForAsync(() => Find(status, "RecentSummary"), element => element?.Current.Name.Length > 0);
+            Assert.Equal("Showing the last 8 of 10 invocations.", summary!.Current.Name);
+
+            // The list arrives after the window opens; the window grows upward, not under the taskbar.
+            var window = new nint(status.Current.NativeWindowHandle);
+            await WaitForAsync(() => FrameAndWorkAreaOf(window), found => found.WorkArea.Contains(found.Frame));
+        }
+        finally
+        {
+            agent.Kill();
+        }
+    }
+
     private static Process StartAgent(BrokerHarness broker, params string[] open)
     {
         var info = new ProcessStartInfo(BuiltExecutables.SessionAgent) { UseShellExecute = false };
@@ -289,14 +312,14 @@ public sealed partial class SessionAgentUiTests
 
     private static async Task<T> WaitForAsync<T>(Func<T> look, Func<T, bool> done)
     {
-        for (var i = 0; i < 150; i++)
+        var found = look();
+        for (var i = 0; i < 150 && !done(found); i++)
         {
-            var found = look();
-            if (done(found)) return found;
             await Task.Delay(100);
+            found = look();
         }
 
-        throw new TimeoutException("The session agent did not show what was expected within 15 seconds.");
+        return done(found) ? found : throw new TimeoutException($"The session agent did not show what was expected within 15 seconds; the last look found {found}.");
     }
 
     private static async Task WaitUntilPinnedAsync(BrokerHarness broker) =>
@@ -325,6 +348,23 @@ public sealed partial class SessionAgentUiTests
         var window = Native.VisibleFrameOf(toast)!.Value;
         var scale = GetDpiForWindow(toast) / 96.0;
         return new Rect(window.Left + (ToastInsetX * scale), window.Top + (ToastInsetY * scale), window.Width - (2 * ToastInsetX * scale), window.Height - (2 * ToastInsetY * scale));
+    }
+
+    /// <summary>
+    /// A window's frame and the work area of its monitor, both in physical pixels. The test
+    /// process is not DPI aware, so it asks as a per-monitor-aware thread would.
+    /// </summary>
+    private static (Rect Frame, Rect WorkArea) FrameAndWorkAreaOf(nint window)
+    {
+        var previous = SetThreadDpiAwarenessContext(PerMonitorAwareV2);
+        try
+        {
+            return (Native.VisibleFrameOf(window)!.Value, Native.MonitorAreaOf(window).WorkArea);
+        }
+        finally
+        {
+            _ = SetThreadDpiAwarenessContext(previous);
+        }
     }
 
     private static bool SitsOn(Rect toast, Rect origin) =>
@@ -371,10 +411,14 @@ public sealed partial class SessionAgentUiTests
     [StructLayout(LayoutKind.Sequential)]
     private readonly record struct POINT(int X, int Y);
 
+    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    private const nint PerMonitorAwareV2 = -4;
+
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)] private static partial nint FindWindowExW(nint parent, nint after, string? className, string? title);
     [LibraryImport("user32.dll")] private static partial uint GetWindowThreadProcessId(nint window, out int processId);
     [LibraryImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool IsWindowVisible(nint window);
     [LibraryImport("user32.dll")] private static partial uint GetDpiForWindow(nint window);
     [LibraryImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool GetCursorPos(out POINT point);
     [LibraryImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] private static partial bool SetCursorPos(int x, int y);
+    [LibraryImport("user32.dll")] private static partial nint SetThreadDpiAwarenessContext(nint context);
 }

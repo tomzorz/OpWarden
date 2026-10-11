@@ -88,9 +88,16 @@
         </ItemsControl>
         <local:HintText x:Name="ErrorText" Grid.Row="4" Margin="0,8,0,0" Foreground="{DynamicResource ErrorTextBrush}" Visibility="Collapsed" />
 
-        <StackPanel Grid.Row="5" Margin="0,16,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-            <local:CommandButton Content="Audit log" Click="OnAuditClick" />
-            <local:CommandButton Margin="8,0,0,0" Content="Rules" Click="OnRulesClick" />
-        </StackPanel>
+        <!-- What the list leaves out, beside the window that has it all. -->
+        <Grid Grid.Row="5" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <local:HintText x:Name="RecentSummaryText" VerticalAlignment="Center" AutomationProperties.AutomationId="RecentSummary" />
+            <local:CommandButton Grid.Column="1" Margin="12,0,0,0" Content="Audit log" Click="OnAuditClick" />
+            <local:CommandButton Grid.Column="2" Margin="8,0,0,0" Content="Rules" Click="OnRulesClick" />
+        </Grid>
     </Grid>
 </Window>

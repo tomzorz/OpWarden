@@ -77,4 +77,5 @@ Verify on the real machine rather than trusting the install-time list: the execu
 - The desktop app's biometric prompt still fires on a cold op CLI session after OpWarden returns `allow`. That is correct (section 15), not a bug.
 - WPF's font cache builds real cultures, so the session agent turns `InvariantGlobalization` off; with it on, every text layout throws.
 - WPF projects drop `System.IO` from the implicit usings, because `Path` collides with `System.Windows.Shapes.Path`; files that need it import it.
+- A `SizeToContent` window raises `SizeChanged` before WPF resizes its window handle to the new content, so the window rectangle read in the handler is the old one. The status window places itself from a dispatcher callback at `Loaded` priority instead, after layout and the resize; the toasts place themselves from WPF's own layout sizes and do not depend on it.
 - .NET's managed UI Automation client takes tens of seconds to search a desktop's top-level windows (45 s on a real desktop, where .NET Framework's takes 46 ms). The UI tests find the agent's windows with Win32 and hand only those to UI Automation, which answers in milliseconds.
