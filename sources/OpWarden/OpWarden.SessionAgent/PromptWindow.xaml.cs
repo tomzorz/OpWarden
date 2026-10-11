@@ -55,7 +55,6 @@ public partial class PromptWindow : Window
                 Content = PromptLayout.CacheChoices[i].Label,
                 GroupName = $"cache-{prompt.PromptId:N}",
                 IsChecked = i == 0,
-                Margin = new Thickness(i == 0 ? 0 : 6, 0, 0, 0),
             };
             AutomationProperties.SetAutomationId(choice, $"CacheChoice{i}");
             _cacheChoices.Add(choice);
@@ -139,7 +138,7 @@ public partial class PromptWindow : Window
         if (_decided) return;
         var left = (int)Math.Ceiling((_prompt.Deadline - DateTimeOffset.UtcNow).TotalSeconds);
         CountdownText.Text = left > 0 ? $"{left} s left" : "Timed out";
-        if (left <= 10) CountdownText.SetResourceReference(ForegroundProperty, "CountdownUrgentTextBrush");
+        CountdownText.IsUrgent = left <= 10;
     }
 
     private void PlaceOnWorkArea()

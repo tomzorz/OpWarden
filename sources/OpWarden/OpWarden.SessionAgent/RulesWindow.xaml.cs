@@ -16,7 +16,7 @@ namespace OpWarden.SessionAgent;
 /// The broker checks the elevation again on every change; this window's buttons are a
 /// courtesy, not the control.
 /// </remarks>
-public partial class RulesWindow : Window
+public partial class RulesWindow : StandardWindow
 {
     private readonly ManagementClient _management;
     private readonly AgentOptions _options;
@@ -33,7 +33,6 @@ public partial class RulesWindow : Window
         ElevateButton.Visibility = Editable ? Visibility.Collapsed : Visibility.Visible;
         RemoveButton.IsEnabled = false;
         Loaded += async (_, _) => await LoadAsync().ConfigureAwait(true);
-        WindowTheme.Follow(this);
         UiCapture.WhenRequested(this, "rules");
     }
 

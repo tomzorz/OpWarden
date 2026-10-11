@@ -7,7 +7,20 @@ namespace OpWarden.SessionAgent;
 // The agent's building blocks. Each has one purpose, and its default look lives in
 // Themes/Components.xaml as an implicit style keyed by its type, so no window wires a style
 // up. None of them positions itself: margins and alignment belong to the layouts that hold
-// them.
+// them (Layouts.cs).
+
+/// <summary>
+/// A window with standard chrome: the status, audit log and rules windows. It loads its own
+/// look, and its title bar follows the app theme.
+/// </summary>
+public class StandardWindow : Window
+{
+    public StandardWindow()
+    {
+        SetResourceReference(StyleProperty, typeof(StandardWindow));
+        WindowTheme.Follow(this);
+    }
+}
 
 /// <summary>
 /// The frame of a borderless window: backdrop, border, rounded corners and shadow.
@@ -15,13 +28,23 @@ namespace OpWarden.SessionAgent;
 public sealed class WindowFrame : ContentControl;
 
 /// <summary>
+/// What a toast reports, which decides its accent colour.
+/// </summary>
+public enum ToastKind
+{
+    CachedRead,
+    RuleRead,
+    Notice,
+}
+
+/// <summary>
 /// The frame of a toast, with the bar along its top that runs down with its time on screen,
-/// in the accent colour that says what kind of event the toast reports.
+/// in the accent colour of what the toast reports.
 /// </summary>
 public sealed class ToastFrame : ContentControl
 {
-    public static readonly DependencyProperty AccentProperty =
-        DependencyProperty.Register(nameof(Accent), typeof(Brush), typeof(ToastFrame), new PropertyMetadata(null));
+    public static readonly DependencyProperty KindProperty =
+        DependencyProperty.Register(nameof(Kind), typeof(ToastKind), typeof(ToastFrame), new PropertyMetadata(ToastKind.Notice));
 
     public static readonly DependencyProperty RemainingLifetimeProperty =
         DependencyProperty.Register(nameof(RemainingLifetime), typeof(double), typeof(ToastFrame), new PropertyMetadata(1.0));
@@ -31,10 +54,10 @@ public sealed class ToastFrame : ContentControl
 
     private FrameworkElement? _inside;
 
-    public Brush? Accent
+    public ToastKind Kind
     {
-        get => (Brush?)GetValue(AccentProperty);
-        set => SetValue(AccentProperty, value);
+        get => (ToastKind)GetValue(KindProperty);
+        set => SetValue(KindProperty, value);
     }
 
     /// <summary>
@@ -86,6 +109,47 @@ public sealed class ToastFrame : ContentControl
 /// How much of a toast's time on screen is left, as a bar that runs down to nothing.
 /// </summary>
 public sealed class ToastLifetimeBar : ProgressBar;
+
+/// <summary>
+/// The details of what a window is about, set apart from the window's backdrop: the request
+/// a prompt decides, what the broker reports, the selected audit entry or rule.
+/// </summary>
+public sealed class DetailsPanel : Border;
+
+/// <summary>
+/// OpWarden's shield, beside the question a prompt asks.
+/// </summary>
+public sealed class OpWardenMark : Control;
+
+/// <summary>
+/// The shield in the colour of how the session agent stands with the broker.
+/// </summary>
+public sealed class BrokerLinkGlyph : Control
+{
+    public static readonly DependencyProperty StateProperty =
+        DependencyProperty.Register(nameof(State), typeof(LinkState), typeof(BrokerLinkGlyph), new PropertyMetadata(LinkState.Waiting, (glyph, _) => ((BrokerLinkGlyph)glyph).ShowState()));
+
+    public BrokerLinkGlyph() => ShowState();
+
+    public LinkState State
+    {
+        get => (LinkState)GetValue(StateProperty);
+        set => SetValue(StateProperty, value);
+    }
+
+    /// <summary>
+    /// The palette brush that colours a state. The tray icon borrows it, so the shield in
+    /// the tray and the one in the status window always agree.
+    /// </summary>
+    public static string BrushKeyFor(LinkState state) => state switch
+    {
+        LinkState.Connected => "BrokerConnectedBrush",
+        LinkState.Refused => "BrokerRefusedBrush",
+        _ => "BrokerWaitingBrush",
+    };
+
+    private void ShowState() => SetResourceReference(ForegroundProperty, BrushKeyFor(State));
+}
 
 /// <summary>
 /// What the prompt's decision buttons share: a hover colour beside the background.
@@ -174,6 +238,21 @@ public sealed class WindowTitleText : TextBlock;
 public sealed class PromptTitleText : TextBlock;
 
 /// <summary>
+/// The time a prompt has left before it denies; urgent in its last seconds.
+/// </summary>
+public sealed class PromptCountdownText : TextBlock
+{
+    public static readonly DependencyProperty IsUrgentProperty =
+        DependencyProperty.Register(nameof(IsUrgent), typeof(bool), typeof(PromptCountdownText), new PropertyMetadata(false));
+
+    public bool IsUrgent
+    {
+        get => (bool)GetValue(IsUrgentProperty);
+        set => SetValue(IsUrgentProperty, value);
+    }
+}
+
+/// <summary>
 /// The heading over one part of a window.
 /// </summary>
 public sealed class SectionHeadingText : TextBlock;
@@ -184,9 +263,36 @@ public sealed class SectionHeadingText : TextBlock;
 public sealed class FieldLabelText : TextBlock;
 
 /// <summary>
-/// A vault, item, key, command or path: what is being accessed, set apart from prose.
+/// A vault, item, key, command or path on one line: what is being accessed, set apart from
+/// prose.
 /// </summary>
 public sealed class SecretValueText : TextBlock;
+
+/// <summary>
+/// A value shown in full over as many lines as it takes: a caller chain, an invocation.
+/// </summary>
+public sealed class FullValueText : TextBlock;
+
+/// <summary>
+/// One field of a stored rule: a pinned value reads as a value, a wildcard as the
+/// placeholder it is.
+/// </summary>
+public sealed class RuleFieldValueText : TextBlock;
+
+/// <summary>
+/// An audit entry's verdict; a deny stands out.
+/// </summary>
+public sealed class AuditVerdictText : TextBlock;
+
+/// <summary>
+/// Why an audit entry got its verdict; an answer from the cache is marked.
+/// </summary>
+public sealed class AuditReasonText : TextBlock;
+
+/// <summary>
+/// Who called, in one column of a list line.
+/// </summary>
+public sealed class CallerNameText : TextBlock;
 
 /// <summary>
 /// Ordinary explanatory text.
@@ -197,6 +303,11 @@ public sealed class BodyText : TextBlock;
 /// Secondary text: hints, timestamps, footers.
 /// </summary>
 public sealed class HintText : TextBlock;
+
+/// <summary>
+/// What went wrong, where the window could not show what it meant to.
+/// </summary>
+public sealed class ErrorMessageText : TextBlock;
 
 /// <summary>
 /// The first line of a toast.

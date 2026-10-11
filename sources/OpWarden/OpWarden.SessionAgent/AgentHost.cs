@@ -32,16 +32,6 @@ public sealed record BrokerLink(LinkState State, string? Reason = null)
         LinkState.Refused => $"Refused by the broker: {Reason}",
         _ => "Waiting for the broker",
     };
-
-    /// <summary>
-    /// The palette brush that colours this state.
-    /// </summary>
-    public string BrushKey => State switch
-    {
-        LinkState.Connected => "BrokerConnectedBrush",
-        LinkState.Refused => "BrokerRefusedBrush",
-        _ => "BrokerWaitingBrush",
-    };
 }
 
 /// <summary>
@@ -165,7 +155,7 @@ internal sealed class AgentHost : IDisposable
 
     private void ShowLink()
     {
-        var color = _app.TryFindResource(_link.BrushKey) is SolidColorBrush brush ? brush.Color : Colors.Gray;
+        var color = _app.TryFindResource(BrokerLinkGlyph.BrushKeyFor(_link.State)) is SolidColorBrush brush ? brush.Color : Colors.Gray;
         _tray?.Show(color, $"OpWarden: {_link.Description}");
         _status?.ShowLink(_link);
     }

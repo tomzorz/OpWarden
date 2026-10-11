@@ -7,10 +7,13 @@
     <!-- Surfaces -->
     <SolidColorBrush x:Key="WindowBackdropBrush" Color="#FBFBFC" />
     <SolidColorBrush x:Key="WindowFrameBorderBrush" Color="#D4D5DB" />
-    <SolidColorBrush x:Key="RequestPanelBackgroundBrush" Color="#F1F2F5" />
+    <SolidColorBrush x:Key="DetailsPanelBackgroundBrush" Color="#F1F2F5" />
     <SolidColorBrush x:Key="ToastBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="ToastFrameBorderBrush" Color="#D4D5DB" />
     <SolidColorBrush x:Key="MenuBackgroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="MenuBorderBrush" Color="#D4D5DB" />
     <SolidColorBrush x:Key="MenuHighlightBrush" Color="#E8EAF0" />
+    <SolidColorBrush x:Key="MenuSeparatorBrush" Color="#E2E3E8" />
     <Color x:Key="WindowShadowColor">#55000000</Color>
 
     <!-- Text -->
@@ -20,6 +23,9 @@
     <SolidColorBrush x:Key="CountdownUrgentTextBrush" Color="#B8381F" />
     <SolidColorBrush x:Key="ErrorTextBrush" Color="#B8381F" />
 
+    <!-- Marks -->
+    <SolidColorBrush x:Key="OpWardenMarkBrush" Color="#228B52" />
+
     <!-- Prompt decisions -->
     <SolidColorBrush x:Key="AllowDecisionBackgroundBrush" Color="#237344" />
     <SolidColorBrush x:Key="AllowDecisionHoverBrush" Color="#1C5E37" />
@@ -28,20 +34,22 @@
     <SolidColorBrush x:Key="DenyDecisionHoverBrush" Color="#872A30" />
     <SolidColorBrush x:Key="DenyDecisionForegroundBrush" Color="#FFFFFF" />
 
-    <!-- Secondary commands -->
+    <!-- Secondary commands and window controls -->
     <SolidColorBrush x:Key="CommandBackgroundBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="CommandHoverBrush" Color="#ECEDF1" />
     <SolidColorBrush x:Key="CommandBorderBrush" Color="#C9CAD2" />
     <SolidColorBrush x:Key="CommandForegroundBrush" Color="#1B1C21" />
     <SolidColorBrush x:Key="AdministratorGlyphBrush" Color="#A8770E" />
+    <SolidColorBrush x:Key="WindowCloseGlyphBrush" Color="#5F616B" />
+    <SolidColorBrush x:Key="WindowCloseHoverBrush" Color="#ECEDF1" />
 
     <!-- Inputs -->
     <SolidColorBrush x:Key="InputBackgroundBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="InputBorderBrush" Color="#C9CAD2" />
     <SolidColorBrush x:Key="SelectedChoiceBackgroundBrush" Color="#2F5FAE" />
     <SolidColorBrush x:Key="SelectedChoiceForegroundBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="PinCheckGlyphBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="PinCheckedBackgroundBrush" Color="#2F5FAE" />
+    <SolidColorBrush x:Key="CheckedBoxGlyphBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="CheckedBoxBackgroundBrush" Color="#2F5FAE" />
     <SolidColorBrush x:Key="FocusOutlineBrush" Color="#2F6FE0" />
 
     <!-- Where a read came from, notices, and how long a toast has left -->

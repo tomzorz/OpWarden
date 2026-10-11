@@ -129,6 +129,10 @@ internal static class TrayGlyph
     private static readonly Geometry Shield = Geometry.Parse("M 8,0.8 L 14.6,3.3 L 14.6,8 C 14.6,11.9 11.8,14.6 8,15.4 C 4.2,14.6 1.4,11.9 1.4,8 L 1.4,3.3 Z");
     private static readonly Geometry Keyhole = Geometry.Parse("M 8,5 A 1.7,1.7 0 1 1 7.99,5 Z M 7.2,7.6 L 8.8,7.6 L 9.2,11 L 6.8,11 Z");
 
+    // The notification area does not follow the app palette, so the keyhole keeps one colour
+    // that reads on every shield state.
+    private static readonly Brush KeyholeBrush = Brushes.White;
+
     public static nint Create(Color color)
     {
         var size = GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem());
@@ -137,7 +141,7 @@ internal static class TrayGlyph
         {
             drawing.PushTransform(new ScaleTransform(size / 16.0, size / 16.0));
             drawing.DrawGeometry(new SolidColorBrush(color), null, Shield);
-            drawing.DrawGeometry(Brushes.White, null, Keyhole);
+            drawing.DrawGeometry(KeyholeBrush, null, Keyhole);
             drawing.Pop();
         }
 

@@ -7,35 +7,23 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowActivated="False" ShowInTaskbar="False"
         UseLayoutRounding="True">
-    <!-- The margin is room for the frame's shadow, and spaces stacked toasts. -->
-    <Grid x:Name="FrameHost" Margin="12,6">
+    <Grid x:Name="FrameHost" Margin="{StaticResource ToastShadowMargin}">
         <local:ToastFrame x:Name="Frame" Cursor="Hand">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <local:ToastTitleText x:Name="TitleText" VerticalAlignment="Center" />
-                <local:WindowCloseButton Grid.Column="1" Margin="8,-4,-4,0" VerticalAlignment="Top" Click="OnCloseClick" />
-
-                <ItemsControl x:Name="LinesList" Grid.Row="1" Grid.ColumnSpan="2" Margin="0,6,0,0" Focusable="False">
+            <local:SpacedStackPanel Spacing="{StaticResource ToastContentSpacing}">
+                <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource HeaderItemSpacing}">
+                    <local:ToastTitleText x:Name="TitleText" local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" />
+                    <local:WindowCloseButton VerticalAlignment="Top" Click="OnCloseClick" />
+                </local:SpacedStackPanel>
+                <ItemsControl x:Name="LinesList" Focusable="False" ItemsPanel="{StaticResource ListItemsLayout}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <local:SecretValueText Margin="0,1" Text="{Binding}" />
+                            <local:SecretValueText Text="{Binding}" />
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
-
-                <local:BodyText x:Name="MessageText" Grid.Row="2" Grid.ColumnSpan="2" Margin="0,6,0,0" />
-                <local:HintText x:Name="FooterText" Grid.Row="3" Grid.ColumnSpan="2" Margin="0,8,0,0" />
-            </Grid>
+                <local:BodyText x:Name="MessageText" />
+                <local:HintText x:Name="FooterText" />
+            </local:SpacedStackPanel>
         </local:ToastFrame>
     </Grid>
 </Window>

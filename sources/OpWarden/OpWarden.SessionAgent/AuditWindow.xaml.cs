@@ -14,7 +14,7 @@ namespace OpWarden.SessionAgent;
 /// session agent reads the file itself, which REQ-TRUST-2 allows; the broker only says
 /// where it is.
 /// </summary>
-public partial class AuditWindow : Window
+public partial class AuditWindow : StandardWindow
 {
     // ceiling: keeps the newest few thousand rows in memory; page through the file if
     // anyone needs months of history on screen.
@@ -36,7 +36,6 @@ public partial class AuditWindow : Window
         Loaded += async (_, _) => await LoadAsync().ConfigureAwait(true);
         _follow.Tick += (_, _) => Follow();
         Closed += (_, _) => _follow.Stop();
-        WindowTheme.Follow(this);
         UiCapture.WhenRequested(this, "audit");
     }
 

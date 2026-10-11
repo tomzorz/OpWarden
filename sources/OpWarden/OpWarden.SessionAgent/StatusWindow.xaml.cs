@@ -14,7 +14,7 @@ namespace OpWarden.SessionAgent;
 /// the last few invocations. It opens above the notification area and refreshes itself
 /// while it stays open.
 /// </summary>
-public partial class StatusWindow : Window
+public partial class StatusWindow : StandardWindow
 {
     private const int RecentCount = 8;
 
@@ -56,14 +56,13 @@ public partial class StatusWindow : Window
         _refresh.Tick += (_, _) => Refresh();
         _refresh.Start();
         Closed += (_, _) => _refresh.Stop();
-        WindowTheme.Follow(this);
         UiCapture.WhenRequested(this, "status");
     }
 
     internal void ShowLink(BrokerLink link)
     {
         LinkText.Text = link.Description;
-        LinkGlyph.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, link.BrushKey);
+        LinkGlyph.State = link.State;
     }
 
     internal async void Refresh()

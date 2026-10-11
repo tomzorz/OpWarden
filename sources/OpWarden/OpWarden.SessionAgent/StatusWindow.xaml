@@ -1,103 +1,86 @@
-<Window x:Class="OpWarden.SessionAgent.StatusWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:OpWarden.SessionAgent"
-        Title="OpWarden"
-        AutomationProperties.AutomationId="StatusWindow"
-        Width="520" SizeToContent="Height" ResizeMode="NoResize"
-        WindowStartupLocation="Manual" UseLayoutRounding="True"
-        Background="{DynamicResource WindowBackdropBrush}" Foreground="{DynamicResource PrimaryTextBrush}"
-        FontFamily="{StaticResource InterfaceFontFamily}" FontSize="{StaticResource BodyFontSize}">
-    <Grid Margin="20,16,20,18">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+<local:StandardWindow x:Class="OpWarden.SessionAgent.StatusWindow"
+                      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                      xmlns:local="clr-namespace:OpWarden.SessionAgent"
+                      Title="OpWarden"
+                      AutomationProperties.AutomationId="StatusWindow"
+                      Width="520" SizeToContent="Height" ResizeMode="NoResize"
+                      WindowStartupLocation="Manual">
+    <local:SpacedStackPanel Margin="{StaticResource StandardWindowContentMargin}" Spacing="{StaticResource WindowSectionSpacing}">
 
         <!-- How the agent stands with the broker. -->
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Path x:Name="LinkGlyph" Width="20" Height="22" Stretch="Uniform" VerticalAlignment="Center"
-                  Data="M 8,0 L 16,3 L 16,8 C 16,13 12,16.5 8,18 C 4,16.5 0,13 0,8 L 0,3 Z" />
-            <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+        <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource HeaderItemSpacing}">
+            <local:BrokerLinkGlyph x:Name="LinkGlyph" VerticalAlignment="Center" />
+            <local:SpacedStackPanel VerticalAlignment="Center" Spacing="{StaticResource HeaderSubtitleSpacing}">
                 <local:WindowTitleText Text="OpWarden" />
                 <local:HintText x:Name="LinkText" AutomationProperties.AutomationId="LinkState" />
-            </StackPanel>
-        </Grid>
+            </local:SpacedStackPanel>
+        </local:SpacedStackPanel>
 
-        <!-- What the broker reports. -->
-        <Border Grid.Row="1" Margin="0,14,0,0" Padding="14,10" CornerRadius="8" Background="{DynamicResource RequestPanelBackgroundBrush}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="130" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <local:FieldLabelText Text="Broker account" />
-                <local:BodyText x:Name="AccountText" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,3" />
-
-                <local:FieldLabelText Grid.Row="1" Text="Process events" />
-                <local:BodyText x:Name="EventsText" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,3" />
-
-                <local:FieldLabelText Grid.Row="2" Text="Cached values" />
-                <local:BodyText x:Name="CacheText" Grid.Row="2" Grid.Column="1" Margin="0,3" VerticalAlignment="Center" AutomationProperties.AutomationId="CachedValues" />
-                <local:CommandButton x:Name="FlushButton" Grid.Row="2" Grid.Column="2" Margin="0,3" Content="Flush cache" Click="OnFlushClick" />
-
-                <local:FieldLabelText Grid.Row="3" Text="Running since" />
-                <local:BodyText x:Name="StartedText" Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,3" />
-
-                <local:FieldLabelText Grid.Row="4" Text="Data folder" />
-                <local:SecretValueText x:Name="DataText" Grid.Row="4" Grid.Column="1" Margin="0,3" />
-                <local:CommandButton Grid.Row="4" Grid.Column="2" Margin="0,3" Content="Open" Click="OnOpenDataClick" />
-            </Grid>
-        </Border>
-
-        <local:SectionHeadingText Grid.Row="2" Margin="0,16,0,0" Text="Recent invocations" />
-        <ItemsControl x:Name="RecentList" Grid.Row="3" Margin="0,6,0,0" Focusable="False">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Grid Margin="0,2">
+        <!-- What the broker reports. The commands share one width, so they line up. -->
+        <local:DetailsPanel>
+            <local:SpacedStackPanel Grid.IsSharedSizeScope="True" Spacing="{StaticResource FieldRowSpacing}">
+                <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource FieldColumnSpacing}">
+                    <local:FieldLabelText Width="{StaticResource BrokerFactLabelWidth}" VerticalAlignment="Center" Text="Broker account" />
+                    <local:BodyText x:Name="AccountText" local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" />
+                </local:SpacedStackPanel>
+                <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource FieldColumnSpacing}">
+                    <local:FieldLabelText Width="{StaticResource BrokerFactLabelWidth}" VerticalAlignment="Center" Text="Process events" />
+                    <local:BodyText x:Name="EventsText" local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" />
+                </local:SpacedStackPanel>
+                <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource FieldColumnSpacing}">
+                    <local:FieldLabelText Width="{StaticResource BrokerFactLabelWidth}" VerticalAlignment="Center" Text="Cached values" />
+                    <local:BodyText x:Name="CacheText" local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" AutomationProperties.AutomationId="CachedValues" />
+                    <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="70" />
-                            <ColumnDefinition Width="110" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="BrokerFactCommand" />
                         </Grid.ColumnDefinitions>
-                        <local:HintText Text="{Binding Timestamp, StringFormat=HH:mm:ss, Converter={x:Static local:LocalTime.Converter}}" VerticalAlignment="Center" />
-                        <local:BodyText Grid.Column="1" Text="{Binding Caller}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-                        <local:SecretValueText Grid.Column="2" Text="{Binding Secret}" ToolTip="{Binding Secret}" />
-                        <local:HintText Grid.Column="3" Margin="10,0,0,0" Text="{Binding Outcome}" VerticalAlignment="Center" />
+                        <local:CommandButton x:Name="FlushButton" Content="Flush cache" Click="OnFlushClick" />
                     </Grid>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
-        <local:HintText x:Name="ErrorText" Grid.Row="4" Margin="0,8,0,0" Foreground="{DynamicResource ErrorTextBrush}" Visibility="Collapsed" />
+                </local:SpacedStackPanel>
+                <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource FieldColumnSpacing}">
+                    <local:FieldLabelText Width="{StaticResource BrokerFactLabelWidth}" VerticalAlignment="Center" Text="Running since" />
+                    <local:BodyText x:Name="StartedText" local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" />
+                </local:SpacedStackPanel>
+                <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource FieldColumnSpacing}">
+                    <local:FieldLabelText Width="{StaticResource BrokerFactLabelWidth}" VerticalAlignment="Center" Text="Data folder" />
+                    <local:SecretValueText x:Name="DataText" local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="BrokerFactCommand" />
+                        </Grid.ColumnDefinitions>
+                        <local:CommandButton Content="Open" Click="OnOpenDataClick" />
+                    </Grid>
+                </local:SpacedStackPanel>
+            </local:SpacedStackPanel>
+        </local:DetailsPanel>
+
+        <!-- The last few invocations. -->
+        <local:SpacedStackPanel Spacing="{StaticResource SectionHeadingSpacing}">
+            <local:SectionHeadingText Text="Recent invocations" />
+            <ItemsControl x:Name="RecentList" Focusable="False" ItemsPanel="{StaticResource ListItemsLayout}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource ListColumnSpacing}">
+                            <local:HintText Width="60" VerticalAlignment="Center" Text="{Binding Timestamp, StringFormat=HH:mm:ss, Converter={x:Static local:LocalTime.Converter}}" />
+                            <local:CallerNameText Width="100" VerticalAlignment="Center" Text="{Binding Caller}" />
+                            <local:SecretValueText local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" Text="{Binding Secret}" ToolTip="{Binding Secret}" />
+                            <local:HintText VerticalAlignment="Center" Text="{Binding Outcome}" />
+                        </local:SpacedStackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </local:SpacedStackPanel>
+
+        <local:ErrorMessageText x:Name="ErrorText" Visibility="Collapsed" />
 
         <!-- What the list leaves out, beside the window that has it all. -->
-        <Grid Grid.Row="5" Margin="0,16,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <local:HintText x:Name="RecentSummaryText" VerticalAlignment="Center" AutomationProperties.AutomationId="RecentSummary" />
-            <local:CommandButton Grid.Column="1" Margin="12,0,0,0" Content="Audit log" Click="OnAuditClick" />
-            <local:CommandButton Grid.Column="2" Margin="8,0,0,0" Content="Rules" Click="OnRulesClick" />
-        </Grid>
-    </Grid>
-</Window>
+        <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource ToolbarGroupSpacing}">
+            <local:HintText x:Name="RecentSummaryText" local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" AutomationProperties.AutomationId="RecentSummary" />
+            <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource CommandSpacing}">
+                <local:CommandButton Content="Audit log" Click="OnAuditClick" />
+                <local:CommandButton Content="Rules" Click="OnRulesClick" />
+            </local:SpacedStackPanel>
+        </local:SpacedStackPanel>
+    </local:SpacedStackPanel>
+</local:StandardWindow>

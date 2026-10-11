@@ -1,48 +1,23 @@
-<Window x:Class="OpWarden.SessionAgent.RulesWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:OpWarden.SessionAgent"
-        Title="OpWarden rules"
-        AutomationProperties.AutomationId="RulesWindow"
-        Width="1040" Height="640" MinWidth="720" MinHeight="420"
-        WindowStartupLocation="CenterScreen" UseLayoutRounding="True"
-        Background="{DynamicResource WindowBackdropBrush}" Foreground="{DynamicResource PrimaryTextBrush}"
-        FontFamily="{StaticResource InterfaceFontFamily}" FontSize="{StaticResource BodyFontSize}">
-    <Window.Resources>
-        <!-- A pinned value reads as a value; a wildcard reads as the placeholder it is. -->
-        <Style x:Key="RuleFieldValueText" TargetType="local:SecretValueText" BasedOn="{StaticResource {x:Type local:SecretValueText}}">
-            <Style.Triggers>
-                <Trigger Property="Text" Value="any">
-                    <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
-                    <Setter Property="FontFamily" Value="{StaticResource InterfaceFontFamily}" />
-                    <Setter Property="FontStyle" Value="Italic" />
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-    </Window.Resources>
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+<local:StandardWindow x:Class="OpWarden.SessionAgent.RulesWindow"
+                      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                      xmlns:local="clr-namespace:OpWarden.SessionAgent"
+                      Title="OpWarden rules"
+                      AutomationProperties.AutomationId="RulesWindow"
+                      Width="1040" Height="640" MinWidth="720" MinHeight="420"
+                      WindowStartupLocation="CenterScreen">
+    <local:SpacedStackPanel Margin="{StaticResource StandardWindowContentMargin}" Spacing="{StaticResource WindowSectionSpacing}">
 
         <!-- Whether this window may edit, and how to get there. -->
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <local:HintText x:Name="ModeText" VerticalAlignment="Center" />
-            <local:AdministratorCommandButton x:Name="ElevateButton" Grid.Column="1" Margin="12,0,0,0" Content="Edit as administrator"
-                                              AutomationProperties.AutomationId="ElevateButton" Click="OnElevateClick" />
-            <local:CommandButton Grid.Column="2" Margin="8,0,0,0" Content="Refresh" Click="OnRefreshClick" />
-        </Grid>
+        <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource ToolbarGroupSpacing}">
+            <local:HintText x:Name="ModeText" local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" />
+            <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource CommandSpacing}">
+                <local:AdministratorCommandButton x:Name="ElevateButton" Content="Edit as administrator" AutomationProperties.AutomationId="ElevateButton" Click="OnElevateClick" />
+                <local:CommandButton Content="Refresh" Click="OnRefreshClick" />
+            </local:SpacedStackPanel>
+        </local:SpacedStackPanel>
 
-        <local:RecordGrid x:Name="Records" Grid.Row="1" Margin="0,12,0,0" AutomationProperties.AutomationId="RuleRecords" SelectionChanged="OnSelectionChanged">
+        <local:RecordGrid x:Name="Records" local:SpacedStackPanel.Fill="True" AutomationProperties.AutomationId="RuleRecords" SelectionChanged="OnSelectionChanged">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Verdict" Binding="{Binding Verdict}" Width="70" />
                 <DataGridTextColumn Header="Caller" Binding="{Binding Caller}" Width="140" />
@@ -50,21 +25,21 @@
                 <DataGridTemplateColumn Header="Vault" Width="*">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <local:SecretValueText Style="{StaticResource RuleFieldValueText}" Text="{Binding Vault}" ToolTip="{Binding Vault}" />
+                            <local:RuleFieldValueText Text="{Binding Vault}" ToolTip="{Binding Vault}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="Item" Width="*">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <local:SecretValueText Style="{StaticResource RuleFieldValueText}" Text="{Binding Item}" ToolTip="{Binding Item}" />
+                            <local:RuleFieldValueText Text="{Binding Item}" ToolTip="{Binding Item}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="Key" Width="*">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <local:SecretValueText Style="{StaticResource RuleFieldValueText}" Text="{Binding Key}" ToolTip="{Binding Key}" />
+                            <local:RuleFieldValueText Text="{Binding Key}" ToolTip="{Binding Key}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -74,53 +49,44 @@
         </local:RecordGrid>
 
         <!-- The selected rule: its notices, and what can be done about it. -->
-        <Border Grid.Row="2" Margin="0,12,0,0" Padding="14,10" CornerRadius="8" Background="{DynamicResource RequestPanelBackgroundBrush}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel>
+        <local:DetailsPanel>
+            <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource ToolbarGroupSpacing}">
+                <local:SpacedStackPanel local:SpacedStackPanel.Fill="True" Spacing="{StaticResource SectionHeadingSpacing}">
                     <local:SectionHeadingText Text="Notices" />
-                    <local:HintText x:Name="NoNoticesText" Margin="0,4,0,0" Text="Select a rule to see what OpWarden noticed about it." />
-                    <ItemsControl x:Name="NoticeList" Margin="0,4,0,0" Focusable="False">
+                    <local:HintText x:Name="NoNoticesText" Text="Select a rule to see what OpWarden noticed about it." />
+                    <ItemsControl x:Name="NoticeList" Focusable="False" ItemsPanel="{StaticResource ListItemsLayout}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid Margin="0,3">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <local:BodyText Text="{Binding Text}" VerticalAlignment="Center" />
-                                    <local:CommandButton Grid.Column="1" Margin="12,0,0,0" Content="Add the matching rule"
-                                                         Visibility="{Binding SuggestionVisibility}" IsEnabled="{Binding CanApply}"
+                                <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource ToolbarGroupSpacing}">
+                                    <local:BodyText local:SpacedStackPanel.Fill="True" VerticalAlignment="Center" Text="{Binding Text}" />
+                                    <local:CommandButton Content="Add the matching rule" Visibility="{Binding SuggestionVisibility}" IsEnabled="{Binding CanApply}"
                                                          Tag="{Binding}" Click="OnAddSuggestionClick" />
-                                </Grid>
+                                </local:SpacedStackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                </StackPanel>
-                <local:CommandButton x:Name="RemoveButton" Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Top" Content="Remove rule"
+                </local:SpacedStackPanel>
+                <local:CommandButton x:Name="RemoveButton" VerticalAlignment="Top" Content="Remove rule"
                                      AutomationProperties.AutomationId="RemoveRuleButton" Click="OnRemoveClick" />
-            </Grid>
-        </Border>
+            </local:SpacedStackPanel>
+        </local:DetailsPanel>
 
         <!-- REQ-RULE-17: vaults where every invocation prompts. -->
-        <StackPanel x:Name="PromptAlwaysPanel" Grid.Row="3" Margin="0,12,0,0">
+        <local:SpacedStackPanel x:Name="PromptAlwaysPanel" Spacing="{StaticResource SectionHeadingSpacing}">
             <local:SectionHeadingText Text="Vaults that always prompt" />
-            <ItemsControl x:Name="PromptAlwaysList" Margin="0,4,0,0" Focusable="False">
+            <ItemsControl x:Name="PromptAlwaysList" Focusable="False" ItemsPanel="{StaticResource ListItemsLayout}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Margin="0,2" Orientation="Horizontal">
-                            <local:SecretValueText Text="{Binding}" VerticalAlignment="Center" />
-                            <local:CommandButton Margin="12,0,0,0" Content="Stop always prompting" Tag="{Binding}" Click="OnClearPromptAlwaysClick"
+                        <local:SpacedStackPanel Orientation="Horizontal" Spacing="{StaticResource ToolbarGroupSpacing}">
+                            <local:SecretValueText VerticalAlignment="Center" Text="{Binding}" />
+                            <local:CommandButton Content="Stop always prompting" Tag="{Binding}" Click="OnClearPromptAlwaysClick"
                                                  IsEnabled="{Binding DataContext.Editable, RelativeSource={RelativeSource AncestorType=Window}}" />
-                        </StackPanel>
+                        </local:SpacedStackPanel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
-        </StackPanel>
+        </local:SpacedStackPanel>
 
-        <local:HintText x:Name="StatusText" Grid.Row="4" Margin="0,10,0,0" />
-    </Grid>
-</Window>
+        <local:HintText x:Name="StatusText" />
+    </local:SpacedStackPanel>
+</local:StandardWindow>

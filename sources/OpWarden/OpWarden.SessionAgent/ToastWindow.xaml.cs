@@ -88,7 +88,7 @@ public partial class ToastWindow : Window
         LinesList.Visibility = Visibility.Visible;
         MessageText.Visibility = Visibility.Collapsed;
         FooterText.Text = toast.Footer(DateTimeOffset.UtcNow);
-        Frame.SetResourceReference(ToastFrame.AccentProperty, toast.Source == ReadSource.Cache ? "CachedReadAccentBrush" : "RuleReadAccentBrush");
+        Frame.Kind = toast.Source == ReadSource.Cache ? ToastKind.CachedRead : ToastKind.RuleRead;
         CountDown(ReadLifetime);
     }
 
@@ -99,7 +99,7 @@ public partial class ToastWindow : Window
         LinesList.Visibility = Visibility.Collapsed;
         MessageText.Text = notice.Text;
         FooterText.Text = "Click for the audit log";
-        Frame.SetResourceReference(ToastFrame.AccentProperty, "NoticeAccentBrush");
+        Frame.Kind = ToastKind.Notice;
         CountDown(NoticeLifetime);
     }
 
