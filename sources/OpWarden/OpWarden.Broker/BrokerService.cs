@@ -58,7 +58,7 @@ internal sealed class BrokerService(
         if (cacheKey is not null && cacheMayAnswer && cache.TryGet(cacheKey, out var expires) is { } cached)
         {
             if (TryAudit(resolution, request, Verdict.Allow, VerdictReason.Cache) is { } failure) return failure;
-            notify(new ReadAllowed(caller, request.Command, PathsOf(request), ReadSource.Cache, expires, DateTimeOffset.UtcNow));
+            notify(new ReadAllowed(caller, request.Command, PathsOf(request), ReadSource.Cache, expires, DateTimeOffset.UtcNow, resolution.Ancestors));
             return VerdictResponse.FromCache(cached);
         }
 
@@ -76,7 +76,7 @@ internal sealed class BrokerService(
         // CLI's own biometric prompt, which cannot say what it is for.
         if (outcome.Reason == VerdictReason.Rule && request.Action is OpAction.Read or OpAction.Run)
         {
-            notify(new ReadAllowed(caller, request.Command, PathsOf(request), ReadSource.Rule, null, DateTimeOffset.UtcNow));
+            notify(new ReadAllowed(caller, request.Command, PathsOf(request), ReadSource.Rule, null, DateTimeOffset.UtcNow, resolution.Ancestors));
         }
 
         if (cacheKey is not null && outcome.Grant is { } ttl) _grants.AddOrUpdate(request, new Grant(cacheKey, ttl));

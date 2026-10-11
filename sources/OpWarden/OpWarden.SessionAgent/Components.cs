@@ -15,19 +15,77 @@ namespace OpWarden.SessionAgent;
 public sealed class WindowFrame : ContentControl;
 
 /// <summary>
-/// The frame of a toast, with the accent strip that says what kind of event it reports.
+/// The frame of a toast, with the bar along its top that runs down with its time on screen,
+/// in the accent colour that says what kind of event the toast reports.
 /// </summary>
 public sealed class ToastFrame : ContentControl
 {
     public static readonly DependencyProperty AccentProperty =
         DependencyProperty.Register(nameof(Accent), typeof(Brush), typeof(ToastFrame), new PropertyMetadata(null));
 
+    public static readonly DependencyProperty RemainingLifetimeProperty =
+        DependencyProperty.Register(nameof(RemainingLifetime), typeof(double), typeof(ToastFrame), new PropertyMetadata(1.0));
+
+    public static readonly DependencyProperty SitsOnWindowProperty =
+        DependencyProperty.Register(nameof(SitsOnWindow), typeof(bool), typeof(ToastFrame), new PropertyMetadata(false));
+
+    private FrameworkElement? _inside;
+
     public Brush? Accent
     {
         get => (Brush?)GetValue(AccentProperty);
         set => SetValue(AccentProperty, value);
     }
+
+    /// <summary>
+    /// The share of the toast's time on screen still left, from 1 down to 0.
+    /// </summary>
+    public double RemainingLifetime
+    {
+        get => (double)GetValue(RemainingLifetimeProperty);
+        set => SetValue(RemainingLifetimeProperty, value);
+    }
+
+    /// <summary>
+    /// True while the toast sits on the top edge of the window its read came from; its
+    /// bottom corners are then square, to meet that edge.
+    /// </summary>
+    public bool SitsOnWindow
+    {
+        get => (bool)GetValue(SitsOnWindowProperty);
+        set => SetValue(SitsOnWindowProperty, value);
+    }
+
+    public override void OnApplyTemplate()
+    {
+        base.OnApplyTemplate();
+        if (_inside is not null) _inside.SizeChanged -= OnInsideSizeChanged;
+        _inside = GetTemplateChild("PART_Inside") as FrameworkElement;
+        if (_inside is not null) _inside.SizeChanged += OnInsideSizeChanged;
+        ClipInside();
+    }
+
+    private void OnInsideSizeChanged(object sender, SizeChangedEventArgs e) => ClipInside();
+
+    /// <summary>
+    /// The lifetime bar runs to the frame's edges, so the inside is clipped to the
+    /// outline's rounded top corners. Nothing inside reaches the bottom corners, which turn
+    /// square when the toast sits on a window.
+    /// </summary>
+    private void ClipInside()
+    {
+        if (_inside is null) return;
+        var radius = TryFindResource("ToastFrameInsideRadius") is double value ? value : 0;
+        var clip = new RectangleGeometry(new Rect(_inside.RenderSize), radius, radius);
+        clip.Freeze();
+        _inside.Clip = clip;
+    }
 }
+
+/// <summary>
+/// How much of a toast's time on screen is left, as a bar that runs down to nothing.
+/// </summary>
+public sealed class ToastLifetimeBar : ProgressBar;
 
 /// <summary>
 /// What the prompt's decision buttons share: a hover colour beside the background.

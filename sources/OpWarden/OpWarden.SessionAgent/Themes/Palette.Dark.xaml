@@ -46,10 +46,11 @@
     <SolidColorBrush x:Key="PinCheckedBackgroundBrush" Color="#35588F" />
     <SolidColorBrush x:Key="FocusOutlineBrush" Color="#6FA6FF" />
 
-    <!-- Where a read came from, and notices -->
+    <!-- Where a read came from, notices, and how long a toast has left -->
     <SolidColorBrush x:Key="CachedReadAccentBrush" Color="#3FA4D4" />
     <SolidColorBrush x:Key="RuleReadAccentBrush" Color="#8C7FF0" />
     <SolidColorBrush x:Key="NoticeAccentBrush" Color="#DFA035" />
+    <SolidColorBrush x:Key="ToastLifetimeTrackBrush" Color="#34353D" />
 
     <!-- Broker state -->
     <SolidColorBrush x:Key="BrokerConnectedBrush" Color="#3DBA77" />

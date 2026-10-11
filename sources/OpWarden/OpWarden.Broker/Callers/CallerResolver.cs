@@ -1,3 +1,4 @@
+using OpWarden.Core.Agent;
 using OpWarden.Core.Rules;
 
 namespace OpWarden.Broker.Callers;
@@ -18,11 +19,19 @@ public sealed record CallerResolution(CallerIdentity Caller, IReadOnlyList<strin
     public const string AwaitingMarker = "(waiting for process events)";
 
     /// <summary>
+    /// The shim's ancestors short of the logon shell, nearest first, as far as each parent
+    /// is proven: where the session agent looks for the window an invocation came from
+    /// (REQ-RULE-40). They go on past an agent host, where <see cref="Chain"/> stops,
+    /// because an agent's window belongs to the terminal or app that runs it.
+    /// </summary>
+    public IReadOnlyList<ProcessIdentity> Ancestors { get; init; } = [];
+
+    /// <summary>
     /// This resolution as the last word: a walk still waiting for events ends where it
     /// stopped, for <paramref name="reason"/>.
     /// </summary>
     public CallerResolution Final(string reason) =>
-        AwaitsEvents ? new(CallerIdentity.Unknown, [.. Chain.Take(Chain.Count - 1), $"(end: {reason})"]) : this;
+        AwaitsEvents ? new(CallerIdentity.Unknown, [.. Chain.Take(Chain.Count - 1), $"(end: {reason})"]) { Ancestors = Ancestors } : this;
 }
 
 /// <summary>
@@ -66,6 +75,7 @@ public sealed class CallerResolver(
     public CallerResolution Resolve(int shimProcessId)
     {
         var chain = new List<string>();
+        var ancestors = new List<ProcessIdentity>();
 
         // The shim is alive while it waits for its verdict, so the live table describes it
         // exactly; the map may not have seen its start yet.
@@ -80,34 +90,53 @@ public sealed class CallerResolver(
             if (hop > 0)
             {
                 var (agent, unverified) = MatchAgent(current);
-                if (agent is not null) return new(CallerIdentity.Agent(agent), chain);
+                if (agent is not null) return new(CallerIdentity.Agent(agent), chain) { Ancestors = [.. ancestors, Identity(current), .. Above(current, session)] };
                 if (unverified is not null)
                 {
                     chain.Add($"(end: not signed by {unverified})");
-                    return new(CallerIdentity.Unknown, chain);
+                    return new(CallerIdentity.Unknown, chain) { Ancestors = ancestors };
                 }
             }
 
-            if (IsLogonShell(current, session)) return new(CallerIdentity.InteractiveUser, chain);
+            if (IsLogonShell(current, session)) return new(CallerIdentity.InteractiveUser, chain) { Ancestors = ancestors };
+            if (hop > 0) ancestors.Add(Identity(current));
 
             if (Parent(current, out var awaitsEvents) is not { } parent)
             {
                 if (awaitsEvents)
                 {
                     chain.Add(CallerResolution.AwaitingMarker);
-                    return new(CallerIdentity.Unknown, chain, AwaitsEvents: true);
+                    return new(CallerIdentity.Unknown, chain, AwaitsEvents: true) { Ancestors = ancestors };
                 }
 
                 chain.Add("(end: no provable parent)");
-                return new(CallerIdentity.Unknown, chain);
+                return new(CallerIdentity.Unknown, chain) { Ancestors = ancestors };
             }
 
             current = parent;
         }
 
         chain.Add("(end: hop limit)");
-        return new(CallerIdentity.Unknown, chain);
+        return new(CallerIdentity.Unknown, chain) { Ancestors = ancestors };
     }
+
+    /// <summary>
+    /// The ancestors above an agent host, short of the logon shell. The caller is settled
+    /// at the agent, but the window the invocation came from belongs to the terminal or app
+    /// further up (REQ-RULE-40), so the walk goes on for them alone.
+    /// </summary>
+    private IEnumerable<ProcessIdentity> Above(ProcessEntry agentHost, int session)
+    {
+        var current = agentHost;
+        for (var hop = 0; hop < MaxHops; hop++)
+        {
+            if (Parent(current, out _) is not { } parent || IsLogonShell(parent, session)) yield break;
+            yield return Identity(parent);
+            current = parent;
+        }
+    }
+
+    private static ProcessIdentity Identity(ProcessEntry process) => new(process.ProcessId, process.CreateTime);
 
     /// <summary>
     /// The parent of <paramref name="child"/> (REQ-CALL-9), or null with

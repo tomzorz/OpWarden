@@ -22,7 +22,7 @@ internal sealed class BrokerHarness : IAsyncDisposable
     private readonly bool _ownsData;
     private readonly BrokerHost _host;
 
-    private BrokerHarness(DirectoryInfo data, bool ownsData, TimeSpan promptTimeout, CallerIdentity caller, IEnumerable<Rule> rules, string? sessionAgentPath)
+    private BrokerHarness(DirectoryInfo data, bool ownsData, TimeSpan promptTimeout, CallerIdentity caller, IEnumerable<Rule> rules, string? sessionAgentPath, IReadOnlyList<ProcessIdentity> ancestors)
     {
         (_data, _ownsData) = (data, ownsData);
         using var self = WindowsIdentity.GetCurrent();
@@ -33,7 +33,7 @@ internal sealed class BrokerHarness : IAsyncDisposable
             sessionAgentPath ?? Environment.ProcessPath!,
             Pipes,
             promptTimeout,
-            _ => new CallerResolution(caller, ["test-caller(0)"]),
+            _ => new CallerResolution(caller, ["test-caller(0)"]) { Ancestors = ancestors },
             ConnectionErrors.Add));
         var seed = rules.ToList();
         if (seed.Count > 0) Rules.Add(seed);
@@ -58,13 +58,14 @@ internal sealed class BrokerHarness : IAsyncDisposable
     private string AuditPath => Path.Combine(_data.FullName, "audit.jsonl");
 
     /// <param name="sessionAgentPath">The executable the broker pins; by default the test process itself, so <see cref="ConnectAgentAsync"/> is pinned.</param>
-    public static BrokerHarness Start(CallerIdentity caller, IEnumerable<Rule>? rules = null, TimeSpan? promptTimeout = null, string? sessionAgentPath = null) =>
-        new(Directory.CreateTempSubdirectory("opwarden-broker-"), true, promptTimeout ?? TimeSpan.FromSeconds(20), caller, rules ?? [], sessionAgentPath);
+    /// <param name="ancestors">The shim's ancestors the caller resolution reports, which the notifications carry.</param>
+    public static BrokerHarness Start(CallerIdentity caller, IEnumerable<Rule>? rules = null, TimeSpan? promptTimeout = null, string? sessionAgentPath = null, IReadOnlyList<ProcessIdentity>? ancestors = null) =>
+        new(Directory.CreateTempSubdirectory("opwarden-broker-"), true, promptTimeout ?? TimeSpan.FromSeconds(20), caller, rules ?? [], sessionAgentPath, ancestors ?? []);
 
     /// <summary>
     /// Starts a broker on a data directory the test owns, to restart over the same files.
     /// </summary>
-    public static BrokerHarness StartIn(DirectoryInfo data, CallerIdentity caller) => new(data, false, TimeSpan.FromSeconds(20), caller, [], null);
+    public static BrokerHarness StartIn(DirectoryInfo data, CallerIdentity caller) => new(data, false, TimeSpan.FromSeconds(20), caller, [], null, []);
 
     public static BrokerPipeNames NewPipeNames()
     {

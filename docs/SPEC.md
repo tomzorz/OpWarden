@@ -102,6 +102,14 @@ Do not use: process table, ancestry cache, process history.
 The dialog the session agent shows the interactive user, containing the request tuple, the four decision controls, and, for a `read` invocation, the cache-grant control.
 Do not use: popup, dialog.
 
+### origin window (noun)
+The top-level window that an invocation came from, which the session agent selects by REQ-RULE-41.
+Do not use: source window, caller window.
+
+### work area (noun)
+The part of a monitor that the Windows taskbar does not cover. The work area of a window is the work area of the monitor that holds most of that window.
+Do not use: screen, desktop.
+
 ### bypass watcher (noun)
 The broker component that subscribes to process-creation events and detects op CLI starts that no shim requested.
 Do not use: monitor, sentinel.
@@ -396,7 +404,40 @@ REQ-RULE-32: When the broker stores a rule from a prompt, and REQ-RULE-29, REQ-R
 
 REQ-RULE-38: When a stored rule allows a `read` invocation or a `run` invocation, the broker MUST notify the session agent with the caller and the secret paths, before the shim runs the op CLI.
 
-REQ-RULE-39: The session agent MUST show each notification of REQ-RULE-38 and REQ-CACHE-16 without taking focus. The session agent MAY combine the notifications from one caller and one source that arrive within 4 seconds of each other into one notification.
+REQ-RULE-39: The session agent MUST show each notification of REQ-RULE-38 and REQ-CACHE-16 without taking focus. The session agent MAY combine the notifications from one caller, one source, and one origin window that arrive within 4 seconds of each other into one notification.
+
+**Notification-placement decision (2026-10-11):** after the first notifications ran, Tamás asked for four changes: a sound, a bar that shows how long each notification stays on screen, a pause when the pointer rests on one, and half again as much time on screen. He also asked that each notification sit on top of the window that the invocation came from, because a notification in a corner of the screen does not say which of the user's windows read the secret. A window that leaves no room above itself, such as a maximized window, takes its notifications in its top-right corner.
+
+REQ-RULE-40: The broker MUST list the ancestors of the shim process in each notification of REQ-RULE-38 and REQ-CACHE-16, nearest first. For each ancestor, the broker MUST give the process identifier and the creation time. The broker MUST continue the list past an agent-host process. The broker MUST NOT list the interactive logon session's shell (REQ-CALL-22). The broker MUST end the list at the first process whose parent REQ-CALL-9 does not prove. The reason the list continues is that an agent host owns no window. The window belongs to the process that runs the agent host, such as a terminal.
+
+REQ-RULE-41: For each notification, the session agent MUST select the origin window from the listed ancestors, nearest first. The origin window is the frontmost qualifying window of the first listed ancestor that owns at least one qualifying window. A listed ancestor counts only when a running process has both its process identifier and its creation time, because Windows reuses process identifiers. A qualifying window meets all five of the following conditions:
+
+- The window is a top-level window that Windows shows.
+- The window is on the current virtual desktop.
+- No other window owns the window.
+- The window is not a tool window.
+- The window has a width and a height greater than 0.
+
+REQ-RULE-42: This requirement applies when every notification of an origin window fits above the origin window, inside the work area. The session agent MUST show the newest of those notifications on the top edge of the origin window, with no gap. The session agent MUST stack the older ones above the newest one. The session agent MUST give each of them the width of the origin window, and at least 320 device-independent pixels.
+
+REQ-RULE-43: When REQ-RULE-42 does not apply, the session agent MUST show the notifications of the origin window in a corner instead. The corner is the top-right corner of the part of the origin window that lies inside the work area. The session agent MUST place the newest notification 16 device-independent pixels below the top edge and 16 device-independent pixels left of the right edge of that part. The session agent MUST stack the older notifications below the newest one. The reason is that a maximized window or a full-screen window leaves no room above itself.
+
+REQ-RULE-44: When at least one of the following holds, the session agent MUST stack the notification upward from the bottom-right corner of the work area of the primary monitor:
+
+- The session agent finds no origin window for the notification.
+- The origin window is minimized.
+- The origin window is hidden.
+- The origin window is on another virtual desktop.
+
+The session agent MUST show each notice in the same corner.
+
+REQ-RULE-45: When an origin window moves, changes size, minimizes, or restores, the session agent MUST place the notifications of that origin window again.
+
+REQ-RULE-46: When the session agent shows a new notification or a new notice, the session agent MUST play the notification sound of the Windows sound scheme. When the session agent combines a notification into one that it already shows (REQ-RULE-39), the session agent MUST NOT play the sound.
+
+REQ-RULE-47: The session agent MUST keep each notification on screen for 12 seconds, and each notice for 30 seconds. The session agent MUST NOT count the time that the pointer rests on a notification or a notice. When the session agent combines a notification into one that it already shows, the session agent MUST start the 12 seconds of that notification again.
+
+REQ-RULE-48: The session agent MUST show a bar along the top edge of each notification and each notice. The session agent MUST shrink the bar from the full width to zero over the time that remains under REQ-RULE-47.
 
 REQ-RULE-33: When a prompt lists more than one request tuple, an `always-allow` or `always-disallow` decision MUST store one rule for each listed request tuple, at the scope the user chose.
 
@@ -597,6 +638,8 @@ Rollback:
 
 - Tree escape: an agent can start a process outside its own ancestry, for example through `explorer.exe`, a COM activation, or a scheduled task. The walk from that process reaches a logon shell without passing the agent host. The broker then classifies its invocations as the interactive user, and OpWarden does not detect the escape.
 - 1Password session scope: on Windows, the op CLI ties an authorization to the identifier and start time of the process that invokes the op CLI. Behind the shim, that process is the shim, which is new for each invocation. Each invocation that runs the op CLI therefore needs its own Windows Hello approval. Agent harnesses start a new shell for each command, and `$(op read …)` runs in a new subshell, so neither case loses an approval it had. A person who runs several op CLI commands in one terminal does lose one.
+
+- Origin window: Windows Terminal hosts several windows in one process, and REQ-RULE-41 selects the frontmost one. When the interactive user switches to another Windows Terminal window before the read, the notification sits on that window. A console program that Windows hands to Windows Terminal as the default terminal has no terminal among its ancestors, so its notifications use the corner of REQ-RULE-44.
 
 - Pipe exhaustion: a same-user process can hold every instance of a broker pipe open, and the broker then answers no new client until instances close. The failure is a `deny` at the shim, never an `allow`.
 - Paging: REQ-CACHE-2 is a SHOULD. Without `VirtualLock`, the operating system can copy cached values to the page file, but REQ-CACHE-14 means only ciphertext reaches it.

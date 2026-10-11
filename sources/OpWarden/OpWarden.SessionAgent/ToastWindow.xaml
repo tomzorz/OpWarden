@@ -3,12 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:OpWarden.SessionAgent"
         Title="OpWarden"
-        Width="400" SizeToContent="Height" ResizeMode="NoResize"
+        SizeToContent="Height" ResizeMode="NoResize"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowActivated="False" ShowInTaskbar="False"
         UseLayoutRounding="True">
     <!-- The margin is room for the frame's shadow, and spaces stacked toasts. -->
-    <Grid Margin="12,6">
+    <Grid x:Name="FrameHost" Margin="12,6">
         <local:ToastFrame x:Name="Frame" Cursor="Hand">
             <Grid>
                 <Grid.RowDefinitions>

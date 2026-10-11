@@ -98,4 +98,11 @@ public enum ReadSource
 /// </summary>
 /// <param name="Paths">The secret paths read: one for <c>op read</c>, one per reference for <c>op run</c> and <c>op inject</c>.</param>
 /// <param name="CacheExpires">For a cached answer, when its cache entry expires.</param>
-public sealed record ReadAllowed(CallerIdentity Caller, string? Command, IReadOnlyList<SecretPath> Paths, ReadSource Source, DateTimeOffset? CacheExpires, DateTimeOffset At) : AgentMessage;
+/// <param name="Ancestors">The shim's ancestors, nearest first, among which the session agent looks for the window the read came from (REQ-RULE-40).</param>
+public sealed record ReadAllowed(CallerIdentity Caller, string? Command, IReadOnlyList<SecretPath> Paths, ReadSource Source, DateTimeOffset? CacheExpires, DateTimeOffset At, IReadOnlyList<ProcessIdentity> Ancestors) : AgentMessage;
+
+/// <summary>
+/// One process, told apart from every later process that gets its ID by its creation time:
+/// a UTC FILETIME, the unit ETW and <c>GetProcessTimes</c> both use.
+/// </summary>
+public sealed record ProcessIdentity(int ProcessId, long CreateTime);

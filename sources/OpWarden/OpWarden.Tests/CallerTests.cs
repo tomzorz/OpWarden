@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using OpWarden.Broker.Callers;
+using OpWarden.Core.Agent;
 using OpWarden.Core.Rules;
 
 namespace OpWarden.Tests;
@@ -393,6 +394,40 @@ public sealed class CallerResolverTests
 
         Assert.Equal(CallerIdentity.Unknown, result.Caller);
         Assert.Contains("(end: no provable parent)", result.Chain);
+    }
+
+    [Fact]
+    public void The_ancestors_go_on_past_the_agent_host_to_the_app_that_owns_the_window()
+    {
+        // Claude Code in the desktop app: the CLI's claude.exe settles the caller, and the
+        // desktop app's Claude.exe above it owns the window a toast belongs on.
+        var result = Resolve(
+        [
+            P(10, 0, 10, Explorer),
+            P(20, 10, 20, @"C:\Program Files\WindowsApps\Claude\Claude.exe"),
+            P(30, 20, 30, @"C:\Users\u\.local\bin\claude.exe"),
+            P(40, 30, 40, @"C:\Program Files\Git\usr\bin\bash.exe"),
+            P(1000, 40, 50, @"C:\OpWarden\op.exe"),
+        ]);
+
+        Assert.Equal(["op.exe(1000)", "bash.exe(40)", "claude.exe(30)"], result.Chain);
+        Assert.Equal([new ProcessIdentity(40, 40), new ProcessIdentity(30, 30), new ProcessIdentity(20, 20)], result.Ancestors);
+    }
+
+    [Fact]
+    public void The_interactive_user_s_ancestors_leave_out_the_shim_and_the_logon_shell()
+    {
+        var result = Resolve([P(10, 0, 10, ShellHost), P(20, 10, 20, @"C:\Program Files\WindowsApps\Terminal\WindowsTerminal.exe"), P(30, 20, 30, @"C:\Program Files\PowerShell\pwsh.exe"), P(1000, 30, 50, @"C:\OpWarden\op.exe")]);
+
+        Assert.Equal([new ProcessIdentity(30, 30), new ProcessIdentity(20, 20)], result.Ancestors);
+    }
+
+    [Fact]
+    public void The_ancestors_end_at_the_first_parent_the_walk_cannot_prove()
+    {
+        var result = Resolve(live: [P(10, 0, 10, Explorer), P(30, 10, 900, @"C:\impostor.exe"), P(40, 30, 40, @"C:\bash.exe"), P(1000, 40, 50, @"C:\OpWarden\op.exe")], mapped: []);
+
+        Assert.Equal([new ProcessIdentity(40, 40)], result.Ancestors);
     }
 
     [Fact]

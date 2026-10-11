@@ -16,7 +16,8 @@ public sealed class BrokerTests
     [Fact]
     public async Task A_matching_rule_decides_without_a_prompt_and_is_audited()
     {
-        await using var broker = BrokerHarness.Start(Claude, [new Rule(Claude, OpAction.Read, null, null, null, Verdict.Allow)]);
+        ProcessIdentity[] ancestors = [new(40, 400), new(20, 200)];
+        await using var broker = BrokerHarness.Start(Claude, [new Rule(Claude, OpAction.Read, null, null, null, Verdict.Allow)], ancestors: ancestors);
         await using var agent = await broker.ConnectAgentAsync();
 
         var run = await broker.RunShimAsync(["read", "op://v/i/f"], new Dictionary<string, string> { ["PROBE_STDOUT"] = "value" });
@@ -27,6 +28,8 @@ public sealed class BrokerTests
         var allowed = await agent.NextAsync<ReadAllowed>();
         Assert.Equal(ReadSource.Rule, allowed.Source);
         Assert.Equal([new SecretPath("v", "i", "f")], allowed.Paths);
+        // With the processes to look for the read's window among (REQ-RULE-40).
+        Assert.Equal(ancestors, allowed.Ancestors);
         Assert.False(agent.TryPeek(out _));
         var entry = Assert.Single(broker.AuditEntries("invocation"));
         Assert.Equal("invocation", entry.GetProperty("event").GetString());

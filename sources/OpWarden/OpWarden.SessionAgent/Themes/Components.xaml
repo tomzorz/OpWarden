@@ -22,6 +22,9 @@
     <!-- Shapes and inner spacing -->
     <CornerRadius x:Key="WindowFrameCornerRadius">10</CornerRadius>
     <CornerRadius x:Key="ToastFrameCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="ToastFrameOnWindowCornerRadius">8,8,0,0</CornerRadius>
+    <!-- The frame's corner radius less its 1 px outline: where the inside is clipped. -->
+    <sys:Double x:Key="ToastFrameInsideRadius">7</sys:Double>
     <CornerRadius x:Key="DecisionButtonCornerRadius">6</CornerRadius>
     <CornerRadius x:Key="CommandButtonCornerRadius">5</CornerRadius>
     <CornerRadius x:Key="CacheChoiceSegmentCornerRadius">5</CornerRadius>
@@ -34,7 +37,7 @@
     <Thickness x:Key="RecordFilterBoxPadding">8,5</Thickness>
     <Thickness x:Key="RecordGridCellPadding">8,5</Thickness>
     <sys:Double x:Key="WindowShadowBlurRadius">18</sys:Double>
-    <GridLength x:Key="ToastAccentStripWidth">4</GridLength>
+    <sys:Double x:Key="ToastLifetimeBarThickness">3</sys:Double>
 
     <!-- Every borderless window -->
     <Style TargetType="local:WindowFrame">
@@ -71,21 +74,42 @@
             <Setter.Value>
                 <ControlTemplate TargetType="local:ToastFrame">
                     <Grid>
-                        <Border Background="{DynamicResource ToastBackgroundBrush}" CornerRadius="{StaticResource ToastFrameCornerRadius}">
+                        <Border x:Name="Backdrop" Background="{DynamicResource ToastBackgroundBrush}" CornerRadius="{StaticResource ToastFrameCornerRadius}">
                             <Border.Effect>
                                 <DropShadowEffect BlurRadius="{StaticResource WindowShadowBlurRadius}" ShadowDepth="2" Opacity="0.4" Color="{DynamicResource WindowShadowColor}" />
                             </Border.Effect>
                         </Border>
-                        <Border BorderBrush="{DynamicResource WindowFrameBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource ToastFrameCornerRadius}" ClipToBounds="True">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="{StaticResource ToastAccentStripWidth}" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Border Background="{TemplateBinding Accent}" CornerRadius="7,0,0,7" />
-                                <ContentPresenter Grid.Column="1" Margin="{TemplateBinding Padding}" />
+                        <Border x:Name="Outline" BorderBrush="{DynamicResource WindowFrameBorderBrush}" BorderThickness="1" CornerRadius="{StaticResource ToastFrameCornerRadius}">
+                            <!-- ToastFrame clips this to the outline's corners. -->
+                            <Grid x:Name="PART_Inside">
+                                <ContentPresenter Margin="{TemplateBinding Padding}" />
+                                <local:ToastLifetimeBar VerticalAlignment="Top" Foreground="{TemplateBinding Accent}" Value="{TemplateBinding RemainingLifetime}" />
                             </Grid>
                         </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="SitsOnWindow" Value="True">
+                            <Setter TargetName="Backdrop" Property="CornerRadius" Value="{StaticResource ToastFrameOnWindowCornerRadius}" />
+                            <Setter TargetName="Outline" Property="CornerRadius" Value="{StaticResource ToastFrameOnWindowCornerRadius}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="local:ToastLifetimeBar">
+        <Setter Property="Height" Value="{StaticResource ToastLifetimeBarThickness}" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="1" />
+        <Setter Property="Background" Value="{DynamicResource ToastLifetimeTrackBrush}" />
+        <Setter Property="AutomationProperties.AutomationId" Value="ToastLifetime" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <!-- ProgressBar sizes PART_Indicator to the value's share of PART_Track. -->
+                <ControlTemplate TargetType="local:ToastLifetimeBar">
+                    <Grid x:Name="PART_Track" Background="{TemplateBinding Background}">
+                        <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" />
                     </Grid>
                 </ControlTemplate>
             </Setter.Value>

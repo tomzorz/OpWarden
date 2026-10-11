@@ -1,4 +1,5 @@
 using System.Text;
+using System.Windows;
 using OpWarden.Core;
 using OpWarden.Core.Agent;
 using OpWarden.Core.Rules;
@@ -8,19 +9,26 @@ namespace OpWarden.Tests;
 
 /// <summary>
 /// The session agent's logic that needs no desktop: how toasts fold a burst of reads
-/// together (REQ-RULE-39), how the audit window follows the log, and the agent's arguments.
+/// together (REQ-RULE-39), which window a read came from and where its toast goes
+/// (REQ-RULE-41 to REQ-RULE-44), how the audit window follows the log, and the agent's
+/// arguments.
 /// </summary>
 public sealed class SessionAgentLogicTests : IDisposable
 {
     private static readonly CallerIdentity Claude = CallerIdentity.Agent("claude-code");
     private static readonly DateTimeOffset Noon = new(2026, 10, 10, 12, 0, 0, TimeSpan.Zero);
 
+    // A 1920 x 1080 monitor at 100 % with the taskbar at the bottom, and a toast's
+    // transparent inset as ToastWindow.xaml sets it.
+    private static readonly MonitorArea Screen = new(new Rect(0, 0, 1920, 1040), 1.0);
+    private static readonly Thickness Inset = new(12, 6, 12, 6);
+
     private readonly DirectoryInfo _scratch = Directory.CreateTempSubdirectory("opwarden-agent-");
 
     public void Dispose() => _scratch.Delete(recursive: true);
 
     private static ReadAllowed Read(string key, ReadSource source = ReadSource.Rule, double seconds = 0, CallerIdentity? caller = null, DateTimeOffset? expires = null) =>
-        new(caller ?? Claude, "read", [new SecretPath("Infra", "tofu-state", key)], source, expires, Noon.AddSeconds(seconds));
+        new(caller ?? Claude, "read", [new SecretPath("Infra", "tofu-state", key)], source, expires, Noon.AddSeconds(seconds), []);
 
     [Fact]
     public void Two_reads_a_moment_apart_share_one_toast()
@@ -67,6 +75,125 @@ public sealed class SessionAgentLogicTests : IDisposable
 
         Assert.Contains("7 h 30 min left", toast.Footer(Noon), StringComparison.Ordinal);
         Assert.Contains("Windows Hello", ReadToast.Start(Read("passphrase")).Footer(Noon), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_origin_window_is_the_frontmost_window_of_the_nearest_ancestor_that_has_one()
+    {
+        // bash owns no window; Windows Terminal above it owns two, and another app's
+        // window is in front of both.
+        ProcessIdentity bash = new(40, 400), terminal = new(20, 200);
+        CandidateWindow[] frontToBack = [new(0x30, 99, 990), new(0x10, 20, 200), new(0x11, 20, 200)];
+
+        Assert.Equal(0x10, OriginWindow.Choose([bash, terminal], frontToBack));
+    }
+
+    [Fact]
+    public void A_window_whose_owner_started_at_another_time_is_not_the_ancestor_s()
+    {
+        // The terminal exited and a later process got its ID; that process's window must
+        // not draw the toast.
+        ProcessIdentity terminal = new(20, 200), editor = new(10, 100);
+        CandidateWindow[] frontToBack = [new(0x10, 20, 250), new(0x20, 10, 100)];
+
+        Assert.Equal(0x20, OriginWindow.Choose([terminal, editor], frontToBack));
+        Assert.Equal(0, OriginWindow.Choose([terminal], frontToBack));
+    }
+
+    [Fact]
+    public void A_toast_sits_on_its_window_at_the_window_s_width_with_no_gap()
+    {
+        var origin = new OriginGeometry(new Rect(300, 400, 800, 500), Screen);
+
+        var width = ToastPlacement.WidthOnWindow(origin, Inset);
+        var corner = Assert.Single(ToastPlacement.OnWindow(origin, [new Size(width, 112)], Inset)!);
+
+        // The frame is the window less its inset: it starts at the window's left edge and
+        // ends on its top edge.
+        Assert.Equal(800 + 24, width);
+        Assert.Equal(300, corner.X + 12);
+        Assert.Equal(400, corner.Y + 112 - 6);
+    }
+
+    [Fact]
+    public void Older_toasts_stack_above_the_newest_one_on_the_window()
+    {
+        var origin = new OriginGeometry(new Rect(300, 600, 800, 300), Screen);
+
+        var corners = ToastPlacement.OnWindow(origin, [new Size(824, 112), new Size(824, 132)], Inset)!;
+
+        Assert.Equal(600, corners[0].Y + 112 - 6);
+        Assert.Equal(corners[0].Y, corners[1].Y + 132);
+    }
+
+    [Fact]
+    public void A_window_narrower_than_a_toast_gets_one_centred_over_it()
+    {
+        var origin = new OriginGeometry(new Rect(500, 400, 200, 300), Screen);
+
+        var width = ToastPlacement.WidthOnWindow(origin, Inset);
+        var corner = Assert.Single(ToastPlacement.OnWindow(origin, [new Size(width, 112)], Inset)!);
+
+        Assert.Equal(ToastPlacement.NarrowestFrameOnWindow + 24, width);
+        Assert.Equal(600, corner.X + 12 + (ToastPlacement.NarrowestFrameOnWindow / 2));
+    }
+
+    [Fact]
+    public void A_toast_on_a_window_partly_off_screen_stays_in_the_work_area()
+    {
+        var origin = new OriginGeometry(new Rect(-200, 400, 600, 300), Screen);
+
+        var corner = Assert.Single(ToastPlacement.OnWindow(origin, [new Size(ToastPlacement.WidthOnWindow(origin, Inset), 112)], Inset)!);
+
+        Assert.Equal(0, corner.X + 12);
+    }
+
+    [Theory]
+    [InlineData(1040)] // maximized: the work area
+    [InlineData(1080)] // full screen: the whole monitor, taskbar included
+    public void A_window_with_no_room_above_gets_its_toasts_in_its_top_right_corner(double height)
+    {
+        var origin = new OriginGeometry(new Rect(0, 0, 1920, height), Screen);
+
+        Assert.Null(ToastPlacement.OnWindow(origin, [new Size(1944, 112)], Inset));
+        var corners = ToastPlacement.InCorner(origin, [new Size(400, 112), new Size(400, 112)], Inset);
+
+        // The frame keeps 16 DIPs from the top and right edges; the next toast goes below.
+        Assert.Equal(1920 - ToastPlacement.CornerInset, corners[0].X + 400 - 12);
+        Assert.Equal(ToastPlacement.CornerInset, corners[0].Y + 6);
+        Assert.Equal(corners[0].Y + 112, corners[1].Y);
+    }
+
+    [Fact]
+    public void A_window_snapped_to_the_top_gets_its_toasts_in_its_own_corner()
+    {
+        var origin = new OriginGeometry(new Rect(0, 0, 960, 1040), Screen);
+
+        var corner = Assert.Single(ToastPlacement.InCorner(origin, [new Size(400, 112)], Inset));
+
+        Assert.Equal(960 - ToastPlacement.CornerInset, corner.X + 400 - 12);
+    }
+
+    [Fact]
+    public void DIPs_turn_into_pixels_at_the_monitor_s_scale()
+    {
+        var origin = new OriginGeometry(new Rect(600, 900, 1200, 600), new MonitorArea(new Rect(0, 0, 2880, 1680), 1.5));
+
+        var width = ToastPlacement.WidthOnWindow(origin, Inset);
+        var corner = Assert.Single(ToastPlacement.OnWindow(origin, [new Size(width, 112)], Inset)!);
+
+        Assert.Equal(800 + 24, width);
+        Assert.Equal(600, corner.X + (12 * 1.5));
+        Assert.Equal(900, corner.Y + ((112 - 6) * 1.5));
+    }
+
+    [Fact]
+    public void Toasts_without_an_origin_window_stack_up_from_above_the_notification_area()
+    {
+        var corners = ToastPlacement.AboveNotificationArea(Screen, [new Size(400, 112), new Size(400, 90)]);
+
+        Assert.Equal(new Point(1520, 928), corners[0]);
+        Assert.Equal(new Point(1520, 838), corners[1]);
     }
 
     [Fact]

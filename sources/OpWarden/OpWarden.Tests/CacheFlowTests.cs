@@ -31,7 +31,8 @@ public sealed class CacheFlowTests : IDisposable
     [Fact]
     public async Task An_always_allow_with_a_grant_answers_the_next_identical_read_from_the_cache()
     {
-        await using var broker = BrokerHarness.Start(Claude);
+        ProcessIdentity[] ancestors = [new(40, 400)];
+        await using var broker = BrokerHarness.Start(Claude, ancestors: ancestors);
         await using var agent = await broker.ConnectAgentAsync();
 
         var first = broker.RunShimAsync(["read", "op://V/I/K"], Probe("s3cret\n"));
@@ -55,6 +56,7 @@ public sealed class CacheFlowTests : IDisposable
         Assert.Equal(Claude, allowed.Caller);
         Assert.Equal([new SecretPath("V", "I", "K")], allowed.Paths);
         Assert.InRange(allowed.CacheExpires!.Value, DateTimeOffset.UtcNow.AddMinutes(55), DateTimeOffset.UtcNow.AddMinutes(61));
+        Assert.Equal(ancestors, allowed.Ancestors);
     }
 
     [Fact]

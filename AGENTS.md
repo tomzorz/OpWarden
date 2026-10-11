@@ -26,7 +26,7 @@ dotnet format
 
 Tests run on Microsoft.Testing.Platform (`global.json`); pass xunit filters after `--`, for example `dotnet test -- --filter-method "*Shim*"`. The end-to-end tests run the built shim and probe as real processes, so build before `dotnet test --no-build`.
 
-The session-agent UI tests put real windows on the desktop and drive them through UI Automation, so they run only with `OPWARDEN_UI_TESTS=1`. With `OPWARDEN_UI_SCREENSHOTS` naming a folder, the session agent saves a PNG of each window it shows, rendered offscreen, which works while the workstation is locked.
+The session-agent UI tests put real windows on the desktop, play the notification sound, and drive them through UI Automation, so they run only with `OPWARDEN_UI_TESTS=1`. The hover test also moves the pointer for a second; it skips itself where the pointer cannot move, as on a locked workstation, so run it when nobody is using the mouse. With `OPWARDEN_UI_SCREENSHOTS` naming a folder, the session agent saves a PNG of each window it shows, rendered offscreen, which works while the workstation is locked.
 
 The session-agent UI tests run against the debug build unless `OPWARDEN_SESSION_AGENT` names another executable, such as the published one in `artifacts/publish/agent`.
 
