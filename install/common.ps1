@@ -52,9 +52,14 @@ function Set-SystemPathEntries([string[]] $entries) {
 }
 
 function Stop-SessionAgent([string] $path) {
-    Get-Process -Name 'OpWarden.SessionAgent' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -eq $path } |
-        Stop-Process -Force
+    $running = @(Get-Process -Name 'OpWarden.SessionAgent' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $path })
+    $running | Stop-Process -Force
+
+    # Stop-Process only asks Windows to end a process. Its executable and DLLs stay mapped,
+    # so nothing can delete or replace them, until it has exited.
+    $running | Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
+    $stuck = @($running | Where-Object { -not $_.HasExited })
+    if ($stuck.Count -gt 0) { throw "The session agent at $path did not exit within 15 seconds (process $($stuck.Id -join ', '))." }
 }
 
 function Read-InstallState([string] $path) {
