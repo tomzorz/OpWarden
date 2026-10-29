@@ -1,0 +1,1330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpWarden demo</title>
+<style>
+  :root {
+    --bg-1: #0b0f14;
+    --bg-2: #141c27;
+    --text: #e6e6e6;
+    --muted: #a0a0a0;
+
+    /* Windows Terminal, dark, with Claude Code running in it. */
+    --wt-frame: #202020;
+    --wt-console: #0c0c0c;
+    --wt-text: #cccccc;
+    --wt-dim: #8a8a8a;
+    --cc-accent: #d97757;
+    --cc-ok: #4eba65;
+    --cc-error: #e5534b;
+
+    /* OpWarden's own palette, from Themes/Palette.Dark.xaml in the session agent. */
+    --ow-backdrop: #1e1f23;
+    --ow-frame-line: #3a3b43;
+    --ow-details: #26272d;
+    --ow-toast: #25262b;
+    --ow-text: #f1f1f4;
+    --ow-secondary: #a3a4ae;
+    --ow-secret: #ebd9a2;
+    --ow-mark: #3dba77;
+    --ow-allow: #2c7a4e;
+    --ow-allow-hover: #36925e;
+    --ow-deny: #8c3035;
+    --ow-deny-hover: #a63a40;
+    --ow-input: #2a2b31;
+    --ow-input-line: #474853;
+    --ow-selected: #35588f;
+    --ow-cached: #3fa4d4;
+    --ow-cached-text: #6dc1e8;
+    --ow-rule: #8c7ff0;
+    --ow-denied-text: #f2826a;
+    --ow-track: #34353d;
+
+    /* The 1Password desktop app's access request and the Windows Hello dialog after it. */
+    --op-dialog: #2e2e2e;
+    --op-line: #444444;
+    --op-well: #262626;
+    --op-blue: #3b73e8;
+    --op-blue-hover: #4a82f5;
+    --hello-dialog: #2b2b2b;
+    --hello-button: #4c4c4c;
+
+    font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #05070a;
+    overflow: hidden;
+  }
+
+  /* The stage is always 1280 by 720; preview mode scales it to fit, render mode does not. */
+  #stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1280px;
+    height: 720px;
+    overflow: hidden;
+    transform-origin: 0 0;
+    background: radial-gradient(120% 90% at 30% 20%, var(--bg-2), var(--bg-1));
+  }
+
+  .abs { position: absolute; }
+  svg { display: block; }
+  .mono { font-family: "Cascadia Mono", Consolas, monospace; }
+
+  /* Windows Terminal: a tab row over the console. */
+  .window {
+    left: 40px;
+    top: 172px;
+    width: 700px;
+    height: 448px;
+    background: var(--wt-console);
+    border: 1px solid #3a3d44;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.55);
+    font-size: 13px;
+  }
+
+  .tabs {
+    height: 40px;
+    display: flex;
+    align-items: flex-end;
+    padding-left: 8px;
+    background: var(--wt-frame);
+  }
+
+  .tab {
+    width: 220px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 10px 0 12px;
+    background: var(--wt-console);
+    border-radius: 8px 8px 0 0;
+    font-size: 12.5px;
+  }
+
+  .tab .close { margin-left: auto; color: var(--muted); }
+  .new-tab { margin: 0 0 9px 12px; color: var(--muted); }
+  .new-tab + .new-tab { margin-left: 6px; }
+
+  .caption-buttons {
+    margin-left: auto;
+    align-self: flex-start;
+    display: flex;
+  }
+
+  .caption-buttons span {
+    width: 46px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #cfcfcf;
+  }
+
+  .console {
+    left: 16px;
+    top: 50px;
+    width: 666px;
+    height: 316px;
+    overflow: hidden;
+    color: var(--wt-text);
+    line-height: 19px;
+    white-space: pre;
+  }
+
+  .transcript { position: absolute; left: 0; top: 0; width: 100%; }
+  .entry { overflow: hidden; }
+  .entry.spaced { padding-top: 10px; }
+  .entry .dim { color: var(--wt-dim); }
+  .entry .error { color: var(--cc-error); }
+  .entry b { font-weight: 700; color: #fff; }
+
+  .welcome {
+    display: inline-block;
+    padding: 4px 12px;
+    border: 1px solid var(--cc-accent);
+    border-radius: 6px;
+  }
+
+  .welcome .star { color: var(--cc-accent); }
+
+  .status {
+    left: 16px;
+    top: 370px;
+    color: var(--cc-accent);
+    white-space: pre;
+  }
+
+  .input-box {
+    left: 12px;
+    top: 392px;
+    width: 674px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border: 1px solid #5c5c5c;
+    border-radius: 6px;
+    color: var(--wt-text);
+    white-space: pre;
+  }
+
+  .input-box .chevron { color: var(--wt-dim); }
+  .caret { display: inline-block; width: 8px; height: 16px; background: var(--wt-text); }
+
+  .input-hint {
+    left: 24px;
+    top: 428px;
+    font-size: 11.5px;
+    color: #6e6e6e;
+  }
+
+  /* Beside the terminal: what 1Password said, then OpWarden's audit log. */
+  .panel {
+    left: 776px;
+    top: 172px;
+    width: 464px;
+    height: 48px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .panel b { font-size: 20px; font-weight: 600; }
+  .panel span { color: var(--muted); font-size: 13px; }
+
+  .told {
+    left: 776px;
+    top: 222px;
+    width: 464px;
+    padding: 6px 18px;
+    background: #17191d;
+    border: 1px solid #33363d;
+    border-radius: 8px;
+  }
+
+  /* Each line holds what 1Password said and, in the second half, what OpWarden says instead. */
+  .told-row { display: flex; align-items: center; height: 40px; font-size: 14px; }
+  .told-row + .told-row { border-top: 1px solid #2a2d33; }
+  .told-row > span:first-child { width: 76px; color: var(--muted); }
+  .told-row .was { width: 136px; }
+  .told-row .now { flex: 1; color: #fff; }
+  .told-row .mono { font-size: 14px; color: #fff; }
+  .told-row .now.mono { font-size: 13px; }
+  .told-row i { color: #7c7f88; }
+  .told-row .wide { color: var(--ow-denied-text); }
+  .told-row .narrow { color: var(--ow-mark); }
+  .told-row .secret { color: var(--ow-secret); }
+  .told-row .old { position: relative; }
+
+  .told-row .old::after {
+    content: '';
+    position: absolute;
+    left: -3px;
+    right: -3px;
+    top: calc(50% - 1px);
+    height: 2px;
+    background: var(--ow-denied-text);
+    transform: scaleX(var(--strike, 0));
+    transform-origin: 0 50%;
+  }
+
+  .tally {
+    left: 776px;
+    top: 420px;
+    width: 464px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+
+  .tally b { width: 64px; font-size: 64px; font-weight: 600; line-height: 1; text-align: right; }
+  .tally span { color: var(--muted); font-size: 16px; }
+
+  /* The cards slide and glow inside this box; it clips them at the window's bottom edge. */
+  .cards {
+    left: 760px;
+    top: 210px;
+    width: 500px;
+    height: 410px;
+    overflow: hidden;
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+  }
+
+  .card {
+    left: 16px;
+    width: 464px;
+    height: 62px;
+    padding: 10px 14px;
+    background: var(--ow-backdrop);
+    border: 1px solid var(--ow-frame-line);
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .card-top { display: flex; align-items: center; gap: 8px; height: 20px; }
+  .card-top .meta { color: var(--ow-secondary); }
+  .card-top .reason { margin-left: auto; color: var(--ow-secondary); }
+  .card-top .reason.cache { color: var(--ow-cached-text); }
+  .card-top time { width: 54px; text-align: right; color: #6e6f78; }
+  .card .secret { margin-top: 5px; font-size: 12.5px; color: var(--ow-secret); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .secret i { font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif; color: var(--ow-secondary); }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border-radius: 10px;
+    border: 1px solid;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .badge.allow { color: var(--ow-mark); border-color: var(--ow-allow); }
+  .badge.deny { color: var(--ow-denied-text); border-color: var(--ow-deny); }
+  .badge.rule { color: var(--ow-rule); border-color: #4b4380; }
+
+  /* The prompt, after PromptWindow.xaml: header, request fields with pins, cache choice, decisions. */
+  .prompt {
+    left: 110px;
+    width: 560px;
+    padding: 16px 20px 18px;
+    background: var(--ow-backdrop);
+    border: 1px solid var(--ow-frame-line);
+    border-radius: 10px;
+    box-shadow: 0 2px 18px rgb(0 0 0 / 0.4), 0 24px 60px rgb(0 0 0 / 0.45);
+    color: var(--ow-text);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    transform-origin: 50% 40%;
+  }
+
+  .p-header { display: flex; align-items: center; gap: 12px; }
+  .p-titles { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .p-title { font-size: 17px; font-weight: 600; }
+  .secret-value { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; color: var(--ow-secret); }
+  .countdown { font-size: 11.5px; color: var(--ow-secondary); }
+
+  .close-button {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    color: var(--ow-secondary);
+  }
+
+  .p-fields { display: flex; flex-direction: column; gap: 8px; }
+  .details { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; background: var(--ow-details); border-radius: 8px; }
+  .field { display: flex; align-items: center; gap: 10px; height: 18px; }
+  .pin { width: 86px; display: flex; align-items: center; gap: 8px; color: var(--ow-secondary); }
+
+  .box {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    border: 1px solid var(--ow-input-line);
+    border-radius: 3px;
+    background: var(--ow-input);
+  }
+
+  .box svg { opacity: 0; }
+  .box.checked { background: var(--ow-selected); border-color: var(--ow-selected); }
+  .box.checked svg { opacity: 1; }
+  .pin.off { opacity: 0.45; }
+
+  .hint { font-size: 11.5px; color: var(--ow-secondary); }
+  .p-section { display: flex; flex-direction: column; gap: 6px; }
+  .heading { font-size: 12px; font-weight: 600; color: var(--ow-secondary); }
+  .segments { display: flex; gap: 6px; }
+
+  .segment {
+    padding: 5px 10px;
+    border: 1px solid var(--ow-input-line);
+    border-radius: 5px;
+    background: var(--ow-input);
+  }
+
+  .segment.checked { background: var(--ow-selected); border-color: var(--ow-selected); color: #fff; }
+
+  .decisions { display: flex; gap: 8px; }
+  .decisions .gap { flex: 1; }
+
+  .decision {
+    padding: 8px 14px;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--ow-allow);
+  }
+
+  .decision.deny { background: var(--ow-deny); }
+
+  /* A toast on the window a read came from: as wide as it, square at the bottom, no gap. */
+  .toast {
+    left: 40px;
+    top: 80px;
+    width: 700px;
+    height: 92px;
+    padding: 11px 12px 12px 14px;
+    background: var(--ow-toast);
+    border: 1px solid var(--ow-frame-line);
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
+    color: var(--ow-text);
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .lifetime { left: 0; top: 0; width: 100%; height: 3px; background: var(--ow-track); }
+  .lifetime i { display: block; height: 3px; background: var(--ow-cached); transform-origin: 0 0; }
+  .toast-head { display: flex; align-items: center; gap: 12px; }
+  .toast-head b { flex: 1; font-size: 13.5px; font-weight: 600; }
+
+  /* 1Password's access request, after a capture of the real one. It and every other dialog
+     sit over the terminal, so the panel beside it stays readable. */
+  .op-dialog {
+    left: 190px;
+    top: 168px;
+    width: 400px;
+    padding: 20px 20px 18px;
+    background: var(--op-dialog);
+    border: 1px solid var(--op-line);
+    border-radius: 12px;
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.6);
+    color: #ececec;
+    font-size: 14px;
+    text-align: center;
+    transform-origin: 50% 30%;
+  }
+
+  .op-title { font-size: 17px; font-weight: 600; }
+  .op-art { margin: 16px auto 14px; display: flex; align-items: center; justify-content: center; }
+  .op-art .wire { width: 34px; height: 1px; background: #6a6a6a; }
+  .op-ask { margin-bottom: 16px; }
+  .op-ask span { display: inline-block; }
+
+  .op-account {
+    padding: 12px 14px;
+    background: var(--op-well);
+    border: 1px solid #3a3a3a;
+    border-radius: 8px;
+    text-align: left;
+  }
+
+  .op-account-row { display: flex; align-items: center; gap: 10px; height: 26px; }
+  .op-account-row .chev { width: 10px; color: #bdbdbd; transform-origin: 40% 50%; }
+  .op-account-row b { font-size: 13.5px; }
+
+  .avatar {
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: #7a5fd0;
+  }
+
+  .op-details { overflow: hidden; height: 0; }
+  .op-details > div { padding-top: 12px; font-size: 12.5px; line-height: 1.45; color: #d6d6d6; }
+  .op-details b { display: block; margin-bottom: 8px; font-size: 13px; color: #ececec; }
+  .op-details a { color: #6ea8ff; text-decoration: underline; }
+
+  .op-buttons { margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px; }
+
+  .op-button {
+    height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 14px;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    background: #393939;
+    font-size: 13.5px;
+  }
+
+  .op-button.primary { border-color: var(--op-blue); background: var(--op-blue); color: #fff; }
+
+  /* Windows Hello, Windows 10 dark, after a capture of the real one. */
+  .hello {
+    left: 160px;
+    top: 230px;
+    width: 460px;
+    padding: 0 24px 24px;
+    background: var(--hello-dialog);
+    border: 1px solid #555;
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.6);
+    color: #fff;
+  }
+
+  .hello-top { height: 34px; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #e6e6e6; }
+  .hello-title { margin-top: 2px; font-size: 22px; font-weight: 400; }
+  .hello-body { margin-top: 14px; font-size: 13.5px; }
+  .hello-pin { margin-top: 18px; display: flex; gap: 12px; }
+
+  .hello-tile {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--hello-button);
+  }
+
+  .hello-field {
+    width: 296px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    background: #fff;
+    border: 1px solid #999;
+    color: #000;
+    font-size: 14px;
+    letter-spacing: 2px;
+  }
+
+  .hello-field.empty { color: #8a8a8a; letter-spacing: 0; }
+  .hello-forgot { margin: 8px 0 0 60px; font-size: 13px; color: #7a7a7a; }
+  .hello-buttons { margin-top: 28px; display: flex; justify-content: flex-end; }
+  .hello-buttons span { width: 200px; height: 32px; display: flex; align-items: center; justify-content: center; background: var(--hello-button); font-size: 14px; }
+
+  .spark {
+    left: 0;
+    top: 0;
+    border-radius: 50%;
+  }
+
+  /* A highlighter stroke behind the words a spotlight is about; --mark sweeps it across, and
+     an inline marker that wraps sweeps one line after the other. */
+  .marker {
+    margin: 0 -2px;
+    padding: 0 2px;
+    border-radius: 2px;
+    background: linear-gradient(var(--marker), var(--marker)) no-repeat 0 0 / calc(var(--mark, 0) * 100%) 100%;
+  }
+
+  .marker.warn { --marker: rgb(242 130 106 / 0.4); }
+  .marker.good { --marker: rgb(61 186 119 / 0.35); }
+
+  .spot { left: 0; top: 0; }
+
+  .ripple {
+    left: 0;
+    top: 0;
+    width: 36px;
+    height: 36px;
+    margin: -18px 0 0 -18px;
+    border-radius: 50%;
+    border: 2px solid rgb(255 255 255 / 0.9);
+  }
+
+  .cursor { left: 0; top: 0; width: 22px; height: 30px; }
+
+  .caption {
+    left: 40px;
+    top: 644px;
+    width: 700px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 500;
+    text-shadow: 0 2px 12px rgb(0 0 0 / 0.6);
+  }
+
+  /* Two groups of steps: the problem, then OpWarden. */
+  .steps {
+    left: 40px;
+    top: 16px;
+    display: flex;
+    gap: 56px;
+  }
+
+  .steps small {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5f6873;
+  }
+
+  .steps .group > div { display: flex; gap: 30px; font-size: 20px; font-weight: 500; }
+  .steps span { color: #5f6873; }
+
+  .center {
+    left: 0;
+    top: 0;
+    width: 1280px;
+    height: 720px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .center svg { width: 112px; height: 112px; }
+  .center h1 { margin: 14px 0 0; font-size: 52px; font-weight: 600; letter-spacing: 0.5px; }
+  .center .sub { position: relative; width: 1000px; height: 34px; }
+  .center .sub span { position: absolute; inset: 0; text-align: center; font-size: 24px; color: #b9c3cf; }
+
+  /* Between the two halves: the stage dims under a title. */
+  .dim { left: 0; top: 0; width: 1280px; height: 720px; background: rgb(5 7 10 / 0.8); }
+  .interstitial { gap: 18px; flex-direction: row; }
+  .interstitial svg { width: 64px; height: 64px; }
+  .interstitial h2 { margin: 0; font-size: 44px; font-weight: 600; }
+
+  /* Preview only: scrubber under the stage. */
+  .preview-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: rgb(0 0 0 / 0.7);
+    color: #ddd;
+    font: 13px system-ui, sans-serif;
+  }
+
+  .preview-bar input { flex: 1; }
+  .rendering .preview-bar { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="steps" class="abs steps">
+    <div class="group"><small>Without OpWarden</small><div><span>1 · Blind</span><span>2 · Again</span></div></div>
+    <div class="group"><small>With OpWarden</small><div><span>3 · Ask</span><span>4 · Remember</span><span>5 · Refuse</span></div></div>
+  </div>
+
+  <div id="terminal" class="abs window">
+    <div class="tabs">
+      <div class="tab"><span data-icon="terminal"></span><span>Claude Code</span><span class="close" data-icon="close"></span></div>
+      <span class="new-tab" data-icon="plus"></span><span class="new-tab" data-icon="chevronDown"></span>
+      <div class="caption-buttons"><span data-icon="minimize"></span><span data-icon="maximize"></span><span data-icon="close"></span></div>
+    </div>
+    <div id="console" class="abs console mono"></div>
+    <div id="status" class="abs status mono"></div>
+    <div class="abs input-box mono"><span class="chevron">&gt; </span><span id="typed"></span><span id="caret" class="caret"></span></div>
+    <div class="abs input-hint mono">? for shortcuts</div>
+  </div>
+
+  <div id="told-head" class="abs panel"><b>What 1Password told you</b></div>
+  <div id="tells-head" class="abs panel"><b>What OpWarden tells you</b></div>
+  <div id="told" class="abs told">
+    <div class="told-row"><span>Caller</span><span class="was"><span class="old mono">bash</span></span><span class="now mono">claude-code</span></div>
+    <div class="told-row"><span>Action</span><span class="was"><i class="old">not shown</i></span><span class="now mono">read</span></div>
+    <div class="told-row"><span>Secret</span><span class="was"><i class="old">not shown</i></span><span class="now mono secret">Infra / Cloudflare / token</span></div>
+    <div class="told-row"><span>Access</span><span class="was"><span class="old wide">your whole account</span></span><span class="now narrow">this secret only</span></div>
+  </div>
+  <div id="tally" class="abs tally"><b id="tally-count">0</b><span id="tally-label"></span></div>
+
+  <div id="panel" class="abs panel"><b>Audit log</b><span>every call, prompted or not</span></div>
+  <div id="cards" class="abs cards"></div>
+
+  <div id="toast" class="abs toast">
+    <div class="abs lifetime"><i id="lifetime"></i></div>
+    <div class="toast-head"><b>claude-code read a secret</b><span class="close-button" data-icon="closeThin"></span></div>
+    <div class="secret-value">Infra / Cloudflare / token</div>
+    <div class="hint">From the cache, kept until 11:41 (59 min left)</div>
+  </div>
+
+  <div id="prompts"></div>
+
+  <div id="op-request" class="abs op-dialog">
+    <div class="op-title">1Password Access Requested</div>
+    <div class="op-art">
+      <svg width="58" height="44" viewBox="0 0 58 44"><rect x="1" y="1" width="56" height="42" rx="3" fill="#e9e9e9"/><rect x="1" y="1" width="56" height="7" rx="3" fill="#cfcfcf"/><rect x="6" y="12" width="12" height="27" fill="#d9d9d9"/><rect x="21" y="12" width="31" height="27" fill="#2f6fd6"/></svg>
+      <span class="wire"></span>
+      <svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="9" fill="#4caf50"/><path d="M5 9.4l2.6 2.6L13 6.6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="wire"></span>
+      <svg width="52" height="52" viewBox="0 0 52 52"><circle cx="26" cy="26" r="25" fill="#fff"/><circle cx="26" cy="26" r="19" fill="none" stroke="#1d4fb8" stroke-width="5"/><rect x="22.5" y="15" width="7" height="22" rx="3.5" fill="#0e2a66"/></svg>
+    </div>
+    <div class="op-ask"><span id="op-ask">Allow <b id="op-caller" class="marker">bash</b> to get CLI access</span></div>
+    <div class="op-account">
+      <div class="op-account-row"><span id="op-chevron" class="chev">›</span><span class="avatar"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.2"><rect x="4" y="4" width="8" height="8" rx="1"/><path d="M6 2v2M10 2v2M6 12v2M10 12v2M2 6h2M2 10h2M12 6h2M12 10h2"/></svg></span><b>Sam Example</b></div>
+      <div id="op-details" class="op-details"><div><b>Authorization Details</b>Allow terminal session in “bash” to get <span id="op-full" class="marker warn">full access to your account “Sam Example”</span> using the 1Password CLI. Authorization expires after 10 minutes of inactivity or when 1Password locks. <a>Learn more.</a></div></div>
+    </div>
+    <div class="op-buttons"><span class="op-button">Cancel</span><span id="op-authorize" class="op-button primary"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round"><path d="M3.5 8.5c1.8 2.2 5.2 2.2 7 0"/></svg>Authorize</span></div>
+  </div>
+
+  <div id="hello" class="abs hello">
+    <div class="hello-top"><span>Windows Security</span><span data-icon="close"></span></div>
+    <div id="hello-title" class="hello-title">Making sure it’s you</div>
+    <div id="hello-body" class="hello-body">1Password is trying to unlock.</div>
+    <div class="hello-pin">
+      <span class="hello-tile"><svg width="22" height="22" viewBox="0 0 22 22" fill="#fff"><circle cx="5" cy="4" r="1.6"/><circle cx="11" cy="4" r="1.6"/><circle cx="17" cy="4" r="1.6"/><circle cx="5" cy="10" r="1.6"/><circle cx="11" cy="10" r="1.6"/><circle cx="17" cy="10" r="1.6"/><circle cx="5" cy="16" r="1.6"/><circle cx="11" cy="16" r="1.6"/><circle cx="17" cy="16" r="1.6"/><circle cx="11" cy="21" r="1.2"/></svg></span>
+      <span id="hello-field" class="hello-field"></span>
+    </div>
+    <div class="hello-forgot">I forgot my PIN</div>
+    <div class="hello-buttons"><span>Cancel</span></div>
+  </div>
+
+  <div id="sparks"></div>
+
+  <svg id="spot" class="abs spot" width="1280" height="720" viewBox="0 0 1280 720">
+    <mask id="spot-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1280" height="720">
+      <rect width="1280" height="720" fill="#fff"/>
+      <rect class="hole" rx="8" fill="#000"/>
+      <rect class="hole" rx="8" fill="#000"/>
+    </mask>
+    <rect width="1280" height="720" fill="#05070a" fill-opacity="0.66" mask="url(#spot-mask)"/>
+    <rect class="ring" rx="8" fill="none" stroke-width="2"/>
+    <rect class="ring" rx="8" fill="none" stroke-width="2"/>
+  </svg>
+
+  <div id="dim" class="abs dim"></div>
+  <div id="with" class="abs center interstitial">
+    <svg viewBox="0 0 16 16"><path d="M 8,0.8 L 14.6,3.3 L 14.6,8 C 14.6,11.9 11.8,14.6 8,15.4 C 4.2,14.6 1.4,11.9 1.4,8 L 1.4,3.3 Z" fill="#3dba77"/><path d="M 8,5 A 1.7,1.7 0 1 1 7.99,5 Z M 7.2,7.6 L 8.8,7.6 L 9.2,11 L 6.8,11 Z" fill="#fff"/></svg>
+    <h2>With OpWarden</h2>
+  </div>
+
+  <div id="ripple" class="abs ripple"></div>
+  <svg id="cursor" class="abs cursor" viewBox="0 0 22 30"><path d="M2 2 L2 24 L8 18.5 L12.5 28 L16 26.5 L11.6 17.2 L19.5 17.2 Z" fill="#fff" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/></svg>
+
+  <div id="caption" class="abs caption"></div>
+
+  <div id="center" class="abs center">
+    <svg viewBox="0 0 16 16"><path d="M 8,0.8 L 14.6,3.3 L 14.6,8 C 14.6,11.9 11.8,14.6 8,15.4 C 4.2,14.6 1.4,11.9 1.4,8 L 1.4,3.3 Z" fill="#3dba77"/><path d="M 8,5 A 1.7,1.7 0 1 1 7.99,5 Z M 7.2,7.6 L 8.8,7.6 L 9.2,11 L 6.8,11 Z" fill="#fff"/></svg>
+    <h1>OpWarden</h1>
+    <div class="sub"><span id="tagline">A prompt in front of every 1Password CLI call</span><span id="url">github.com/tomzorz/OpWarden</span></div>
+  </div>
+</div>
+
+<div class="preview-bar">
+  <button id="play" type="button">Pause</button>
+  <input id="scrub" type="range" min="0" max="60" step="0.01" value="0">
+  <span id="clock">0.00 s</span>
+</div>
+
+<script>
+  // Every frame is a pure function of time: renderAt(t) sets every animated property from
+  // scratch, so a headless browser can render any frame in any order (see render.mjs).
+  const DURATION = 60;
+
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const seg = (t, a, b) => clamp((t - a) / (b - a));
+  const lerp = (a, b, p) => a + (b - a) * p;
+  const easeInOut = p => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
+  const easeOut = p => 1 - (1 - p) ** 3;
+  const easeOutBack = p => 1 + 2.70158 * (p - 1) ** 3 + 1.70158 * (p - 1) ** 2;
+
+  // Visible from a to b (fading in) until c to d (fading out).
+  const span = (t, a, b, c, d) => Math.min(easeOut(seg(t, a, b)), 1 - easeInOut(seg(t, c, d)));
+
+  // Keyframes [[time, value], ...]; values are numbers or [x, y] pairs.
+  function track(t, keys, ease = easeInOut) {
+    if (t <= keys[0][0]) return keys[0][1];
+    for (let i = 1; i < keys.length; i++) {
+      const [t1, v1] = keys[i];
+      if (t > t1) continue;
+      const [t0, v0] = keys[i - 1];
+      const p = ease(seg(t, t0, t1));
+      return Array.isArray(v0) ? v0.map((v, k) => lerp(v, v1[k], p)) : lerp(v0, v1, p);
+    }
+    return keys[keys.length - 1][1];
+  }
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage');
+
+  // The second half starts here: the stage dims, the title shows, the terminal starts over.
+  const SWITCH = 22.9;
+
+  // Line icons in the spirit of Segoe Fluent Icons, drawn on a 20 px grid with a 1.25 px stroke.
+  const line = (d, size = 16) => `<svg viewBox="0 0 20 20" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const GLYPHS = {
+    terminal: line('<rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M5.5 8l2.5 2-2.5 2M9.5 12.5h4"/>'),
+    chevronDown: line('<path d="M5 8l5 5 5-5"/>', 12),
+    plus: line('<path d="M10 4v12M4 10h12"/>', 14),
+    close: line('<path d="M5 5l10 10M15 5L5 15"/>', 12),
+    minimize: line('<path d="M5 10h10"/>', 12),
+    maximize: line('<rect x="5" y="5" width="10" height="10" rx="1"/>', 12),
+    // OpWarden's own close glyph: 10 px, 1.4 px stroke (WindowCloseGlyphGeometry).
+    closeThin: '<svg viewBox="-0.7 -0.7 11.4 11.4" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 0L10 10M10 0L0 10"/></svg>',
+  };
+  for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = GLYPHS[el.dataset.icon];
+
+  // The shield in the prompt's header (OpWardenShieldGeometry) and the check box tick.
+  const MARK = '<svg viewBox="0 0 16 18" width="18" height="20"><path d="M 8,0 L 16,3 L 16,8 C 16,13 12,16.5 8,18 C 4,16.5 0,13 0,8 L 0,3 Z" fill="#3dba77"/></svg>';
+  const TICK = '<svg viewBox="-0.9 -0.9 11.8 9.3" width="10" height="8" fill="none" stroke="#fff" stroke-width="1.8"><path d="M0 4L3.5 7.5L10 0"/></svg>';
+
+  // Two Claude Code sessions, one per half. Each entry appears at `at` and, with `until`,
+  // gives its place to the next one; `tool` entries turn green or red at `done`.
+  const LINE = 19;
+  const READ = 'TF_VAR_cf=$(op read op://Infra/Cloudflare/token)';
+  const PLAN = 'Plan: 0 to add, 1 to change, 0 to destroy.';
+  const APPLIED = 'Apply complete! Resources: 0 added, 1 changed, 0 destroyed.';
+  const SESSIONS = [
+    {
+      shown: [-1, SWITCH + 0.2],
+      typing: [[3.0, 3.85, 'Plan the DNS change for staging'], [17.25, 17.6, 'Apply it']],
+      busy: [[4.0, 17.0], [17.75, 20.9]],
+      entries: [
+        { at: -1, kind: 'welcome', height: 54 },
+        { at: 4.0, kind: 'user', text: 'Plan the DNS change for staging' },
+        { at: 4.4, kind: 'say', text: "I'll plan it with the Cloudflare token from 1Password." },
+        { at: 4.8, kind: 'tool', text: `${READ} tofu plan`, done: 16.8 },
+        { at: 4.8, until: 16.8, kind: 'out', text: 'Running…' },
+        { at: 16.8, kind: 'out', text: PLAN },
+        { at: 17.75, kind: 'user', text: 'Apply it' },
+        { at: 18.1, kind: 'tool', text: `${READ} tofu apply`, done: 20.7 },
+        { at: 18.1, until: 20.7, kind: 'out', text: 'Running…' },
+        { at: 20.7, kind: 'out', text: APPLIED },
+      ],
+    },
+    {
+      shown: [SWITCH + 0.9, DURATION],
+      typing: [[24.5, 25.35, 'Plan the DNS change for staging'], [39.6, 39.95, 'Apply it'], [47.05, 47.8, 'Delete the old Cloudflare token too']],
+      busy: [[25.5, 37.95], [40.1, 41.5], [47.95, 53.4]],
+      entries: [
+        { at: -1, kind: 'welcome', height: 54 },
+        { at: 25.5, kind: 'user', text: 'Plan the DNS change for staging' },
+        { at: 25.9, kind: 'say', text: "I'll plan it with the Cloudflare token from 1Password." },
+        { at: 26.3, kind: 'tool', text: `${READ} tofu plan`, done: 37.75 },
+        { at: 26.3, until: 37.75, kind: 'out', text: 'Running…' },
+        { at: 37.75, kind: 'out', text: PLAN },
+        { at: 40.1, kind: 'user', text: 'Apply it' },
+        { at: 40.5, kind: 'tool', text: `${READ} tofu apply`, done: 41.3 },
+        { at: 40.5, until: 41.3, kind: 'out', text: 'Running…' },
+        { at: 41.3, kind: 'out', text: APPLIED },
+        { at: 47.95, kind: 'user', text: 'Delete the old Cloudflare token too' },
+        { at: 48.4, kind: 'tool', text: 'op item delete "Cloudflare (old)" --vault Infra', done: 52.5, failed: true },
+        { at: 48.4, until: 52.5, kind: 'out', text: 'Running…' },
+        { at: 52.5, kind: 'out', text: 'Error: Exit code 77', error: true },
+        { at: 52.5, kind: 'out', text: 'opwarden: denied: denied at the prompt', error: true, more: true },
+        { at: 53.2, kind: 'say', text: "OpWarden refused the delete. You'll need to remove the old token yourself." },
+      ],
+    },
+  ];
+  const [BEFORE, AFTER] = SESSIONS;
+  const SPINNER = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢'];
+
+  const escape = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  for (const session of SESSIONS) {
+    session.el = document.createElement('div');
+    session.el.className = 'transcript';
+    $('console').append(session.el);
+    for (const entry of session.entries) {
+      const el = document.createElement('div');
+      const spaced = entry.kind !== 'out' && entry.kind !== 'welcome';
+      el.className = 'entry' + (spaced ? ' spaced' : '');
+      entry.height ??= LINE + (spaced ? 10 : 0);
+      if (entry.kind === 'welcome') el.innerHTML = '<div class="welcome"><span class="star">✻</span> Welcome to Claude Code!\n  <span class="dim">cwd: C:\\src\\dns</span></div>';
+      if (entry.kind === 'user') el.innerHTML = `<span class="dim">&gt; ${escape(entry.text)}</span>`;
+      if (entry.kind === 'say') el.innerHTML = `<span style="color:#fff">●</span> ${escape(entry.text)}`;
+      if (entry.kind === 'tool') el.innerHTML = `<span class="bullet">●</span> <b>Bash</b>(${escape(entry.text)})`;
+      if (entry.kind === 'out') el.innerHTML = `<span class="${entry.error ? 'error' : 'dim'}">${entry.more ? '     ' : '  ⎿  '}${escape(entry.text)}</span>`;
+      session.el.append(el);
+      entry.el = el;
+    }
+  }
+
+  // Each run of the real op CLI: 1Password's access request, then Windows Hello's PIN. The
+  // request names the process that started op: bash on its own, OpWarden's shim once it
+  // stands in between. The first one gets its details opened; none of them says which
+  // secret or which agent. `marked` is when the caller's name gets its highlighter.
+  const REQUESTS = [
+    { caller: 'bash', mark: 'warn', marked: 5.95, shown: 5.2, expand: 10.65, authorize: 14.0, pin: [15.9, 16.4], gone: 16.6 },
+    { caller: 'bash', shown: 18.45, authorize: 19.35, pin: [19.9, 20.3], gone: 20.45 },
+    { caller: 'OpWarden', mark: 'good', marked: 34.95, shown: 34.6, authorize: 36.2, pin: [36.7, 37.1], gone: 37.25 },
+  ];
+  const HELLO_AFTER = 0.2;
+
+  // The panel's lines: each appears as a spotlight on the access request reaches it, and in
+  // the second half is struck through and answered as one on OpWarden's prompt does.
+  const TOLD = [5.85, 8.3, 8.45, 11.2];
+  const TELLS = [[27.45, 27.6], [29.5, 29.6], [29.5, 29.75], [31.5, 31.65]];
+
+  // OpWarden's prompts. Fields follow the request tuple; a field the broker could not read
+  // is "(unknown)" and cannot be pinned.
+  const PROMPTS = {
+    read: {
+      title: 'claude-code wants to read', command: 'op read', top: 112, shown: 26.7, decided: 34.08, gone: 34.2,
+      fields: [['Caller', 'claude-code'], ['Action', 'read'], ['Vault', 'Infra'], ['Item', 'Cloudflare'], ['Key', 'token']],
+      cache: ['Don\'t cache', '15 minutes', '1 hour', '8 hours'],
+    },
+    delete: {
+      title: 'claude-code wants to delete', command: 'op item delete', top: 136, shown: 48.8, decided: 51.83, gone: 51.95,
+      fields: [['Caller', 'claude-code'], ['Action', 'delete'], ['Vault', 'Infra'], ['Item', 'Cloudflare (old)'], ['Key', '(unknown)', false]],
+    },
+  };
+
+  for (const prompt of Object.values(PROMPTS)) {
+    const el = document.createElement('div');
+    el.className = 'abs prompt';
+    el.style.top = prompt.top + 'px';
+    const fields = prompt.fields.map(([label, value, pinnable = true]) =>
+      `<div class="field"><span class="pin${pinnable ? '' : ' off'}"><span class="box${pinnable ? ' checked' : ''}">${TICK}</span>${label}</span><span class="secret-value marker good">${escape(value)}</span></div>`).join('');
+    const cache = prompt.cache
+      ? `<div class="p-section"><div class="heading">Cache the output</div><div class="segments">${prompt.cache.map(c => `<span class="segment">${c}</span>`).join('')}</div></div>`
+      : '';
+    el.innerHTML = `
+      <div class="p-header">${MARK}<div class="p-titles"><div class="p-title">${prompt.title}</div><div class="secret-value">${prompt.command}</div></div><span class="countdown"></span><span class="close-button">${GLYPHS.closeThin}</span></div>
+      <div class="p-fields"><div class="details">${fields}</div><div class="hint"><span class="marker good">Checked fields are pinned in an always- rule; unchecked fields match anything.</span></div></div>
+      ${cache}
+      <div class="decisions"><span class="decision">Allow once</span><span class="decision">Always allow</span><span class="gap"></span><span class="decision deny">Disallow once</span><span class="decision deny">Always disallow</span></div>`;
+    $('prompts').append(el);
+    prompt.el = el;
+    prompt.rows = [...el.querySelectorAll('.field')];
+    prompt.values = [...el.querySelectorAll('.field .secret-value')];
+    prompt.pins = el.querySelector('.p-fields');
+    prompt.hint = el.querySelector('.hint .marker');
+    prompt.boxes = [...el.querySelectorAll('.box')];
+    prompt.segments = [...el.querySelectorAll('.segment')];
+    prompt.buttons = [...el.querySelectorAll('.decision')];
+    // What a decision locks: WPF draws a disabled pin, choice or button at 45 % opacity.
+    prompt.locked = [...el.querySelectorAll('.pin'), ...prompt.segments, ...prompt.buttons];
+  }
+
+  // Audit log cards: the slot a card sits in moves down as new entries arrive on top.
+  const CARD_Y = slot => 12 + slot * 72;
+  const CARDS = [
+    { badge: 'allow', meta: 'claude-code · op read', reason: 'rule', time: '10:30:02', secret: 'Dev / Sentry / dsn', since: -1 },
+    { badge: 'allow', meta: 'interactive-user · op item get', reason: 'rule', time: '10:12:44', secret: 'Dev / npm / publish-token', since: -1 },
+    { badge: 'rule', meta: 'always-allow · cache 1 hour', time: '10:41:07', secret: 'claude-code · read · Infra · Cloudflare · token', since: 34.7 },
+    { badge: 'allow', meta: 'claude-code · op read', reason: 'user', time: '10:41:07', secret: 'Infra / Cloudflare / token', since: 37.75 },
+    { badge: 'allow', meta: 'claude-code · op read', reason: 'cache', time: '10:41:39', secret: 'Infra / Cloudflare / token', since: 41.1 },
+    { badge: 'rule', meta: 'always-disallow', time: '10:42:15', secret: 'claude-code · delete · <i>any</i> · <i>any</i> · <i>any</i>', since: 52.1 },
+    { badge: 'deny', meta: 'claude-code · op item delete', reason: 'user', time: '10:42:15', secret: 'Infra / Cloudflare (old) / ?', since: 52.7 },
+  ];
+  // The cards below make room for a new one before it lands.
+  const MAKE_ROOM = 0.35;
+  const BADGES = { allow: 'Allow', deny: 'Deny', rule: 'Rule' };
+  const GLOW = { allow: '61 186 119', deny: '242 130 106', rule: '140 127 240', cache: '63 164 212' };
+  for (const card of CARDS) {
+    const el = document.createElement('div');
+    el.className = 'abs card';
+    const reason = card.reason ? `<span class="reason${card.reason === 'cache' ? ' cache' : ''}">${card.reason}</span>` : '<span class="reason"></span>';
+    el.innerHTML = `<div class="card-top"><span class="badge ${card.badge}">${BADGES[card.badge]}</span><span class="meta">${card.meta}</span>${reason}<time>${card.time}</time></div><div class="secret mono">${card.secret}</div>`;
+    $('cards').append(el);
+    card.el = el;
+    card.glow = GLOW[card.reason === 'cache' ? 'cache' : card.badge];
+  }
+
+  const SPARK_TRAIL = 7;
+  for (let i = 0; i < SPARK_TRAIL; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'abs spark';
+    $('sparks').append(dot);
+  }
+
+  function place(el, { x = 0, y = 0, scale = 1, rotate = 0, opacity = 1 } = {}) {
+    el.style.transform = `translate(${x}px, ${y}px) rotate(${rotate}deg) scale(${scale})`;
+    el.style.opacity = opacity;
+  }
+
+  // Where a point of an element sits on the stage. Offsets ignore transforms, so this is
+  // where the element rests once its entrance animation is over.
+  function anchor(el, fx = 0.5, fy = 0.5) {
+    let x = 0;
+    let y = 0;
+    for (let e = el; e && e !== stage; e = e.offsetParent) {
+      x += e.offsetLeft;
+      y += e.offsetTop;
+    }
+    return [x + el.offsetWidth * fx, y + el.offsetHeight * fy];
+  }
+
+  // An element's resting rectangle on the stage, [x, y, width, height], grown by pad.
+  function box(el, pad = 6) {
+    const [x, y] = anchor(el, 0, 0);
+    return [x - pad, y - pad, el.offsetWidth + 2 * pad, el.offsetHeight + 2 * pad];
+  }
+
+  function union(...boxes) {
+    const left = Math.min(...boxes.map(b => b[0]));
+    const top = Math.min(...boxes.map(b => b[1]));
+    const right = Math.max(...boxes.map(b => b[0] + b[2]));
+    const bottom = Math.max(...boxes.map(b => b[1] + b[3]));
+    return [left, top, right - left, bottom - top];
+  }
+
+  // Spotlights: the stage darkens around two ringed holes while a caption makes its point,
+  // usually one on a dialog and one on the matching line of the panel. A scene's keys move
+  // the holes from one pair to the next; they are measured every frame, so a hole follows
+  // its target when the layout changes (the 1Password details opening, say).
+  const told = [...$('told').children];
+  const SPOTS = [
+    {
+      shade: [5.6, 5.95, 13.4, 13.75], rgb: GLOW.deny, keys: () => {
+        const who = [box($('op-ask')), box(told[0], 2)];
+        const what = [box($('op-request'), 4), union(box(told[1], 2), box(told[2], 2))];
+        // The details start with 12 px of padding that belongs to the account row above.
+        const [x, y, width, height] = box($('op-details').firstElementChild);
+        const reach = [[x, y + 10, width, height - 10], box(told[3], 2)];
+        return [[8.0, who], [8.4, what], [10.9, what], [11.3, reach]];
+      },
+    },
+    {
+      shade: [14.45, 14.8, 15.75, 16.05], rgb: GLOW.deny, keys: () => {
+        const hello = union(box($('hello-title')), box($('hello-body')));
+        return [[0, [hello, hello]]];
+      },
+    },
+    { shade: [20.7, 21.0, 22.3, 22.6], rgb: GLOW.deny, keys: () => [[0, [box($('told'), 4), box($('tally'), 8)]]] },
+    {
+      shade: [27.1, 27.45, 33.0, 33.35], rgb: GLOW.allow, keys: () => {
+        const rows = PROMPTS.read.rows;
+        const who = [box(rows[0], 5), box(told[0], 2)];
+        const what = [union(...rows.slice(1).map(r => box(r, 5))), union(box(told[1], 2), box(told[2], 2))];
+        const reach = [box(PROMPTS.read.pins), box(told[3], 2)];
+        return [[29.1, who], [29.45, what], [31.1, what], [31.45, reach]];
+      },
+    },
+    { shade: [34.85, 35.15, 35.85, 36.1], rgb: GLOW.allow, keys: () => [[0, [box($('op-ask')), box(CARDS[2].el, 4)]]] },
+    { shade: [41.6, 41.95, 44.8, 45.15], rgb: GLOW.cache, keys: () => [[0, [box($('toast'), 4), box(CARDS[4].el, 4)]]] },
+  ];
+  const holes = [...$('spot').querySelectorAll('.hole')];
+  const rings = [...$('spot').querySelectorAll('.ring')];
+
+  function spotlight(t) {
+    const scene = SPOTS.find(s => t >= s.shade[0] && t <= s.shade[3]);
+    $('spot').style.opacity = scene ? span(t, ...scene.shade) : 0;
+    if (!scene) return;
+    const at = track(t, scene.keys().map(([k, pair]) => [k, pair.flat()]));
+    for (let i = 0; i < 2; i++) {
+      const [x, y, width, height] = at.slice(4 * i, 4 * i + 4);
+      for (const rect of [holes[i], rings[i]]) Object.entries({ x, y, width, height }).forEach(([k, v]) => rect.setAttribute(k, v));
+      rings[i].setAttribute('stroke', `rgb(${scene.rgb})`);
+      rings[i].style.filter = `drop-shadow(0 0 6px rgb(${scene.rgb} / 0.8))`;
+    }
+  }
+
+  // Each audit entry: a short trail of dots on a curve from the terminal to the top card.
+  function sparks(t, from, to, a, b, rgb) {
+    const dots = $('sparks').children;
+    for (let i = 0; i < dots.length; i++) {
+      const p = seg(t, a, b) - i * 0.05;
+      const visible = t > a && t < b + 0.3 && p > 0 && p < 1;
+      const e = easeInOut(clamp(p));
+      const cx = lerp(from[0], to[0], e);
+      const cy = lerp(from[1], to[1], e) - Math.sin(Math.PI * e) * 90;
+      const size = 13 - i * 1.5;
+      dots[i].style.width = dots[i].style.height = size + 'px';
+      dots[i].style.background = `rgb(${rgb})`;
+      dots[i].style.boxShadow = `0 0 12px 4px rgb(${rgb} / 0.7)`;
+      place(dots[i], { x: cx - size / 2, y: cy - size / 2, opacity: visible ? 1 - i / SPARK_TRAIL : 0 });
+    }
+  }
+
+  function caption(t) {
+    const lines = [
+      [3.0, 4.9, 'Without OpWarden, op goes straight to 1Password.'],
+      [5.6, 7.9, 'Who is asking? 1Password only says "bash".'],
+      [8.1, 10.4, "Which secret, and to do what? It doesn't say."],
+      [11.0, 13.5, 'Authorize, and bash gets full access to your account.'],
+      [14.2, 16.6, "Windows Hello doesn't say what for, either."],
+      [17.3, 19.9, 'Each command is a new bash, so each one asks again.'],
+      [20.1, 22.6, 'Same secret, same blind questions, every time.'],
+      [24.5, 26.5, 'With OpWarden, every op call is checked first.'],
+      [27.1, 29.0, 'Who is asking? claude-code, by name.'],
+      [29.2, 31.0, 'What for? To read Infra / Cloudflare / token.'],
+      [31.2, 33.9, 'The allow covers this one secret. Anything else asks.'],
+      [34.6, 36.1, 'Who is asking now? OpWarden, which already checked.'],
+      [36.3, 37.5, '1Password and Hello still check. Now you know what for.'],
+      [37.75, 39.4, 'Always allow saved a rule with an hour of cache.'],
+      [40.3, 43.0, 'The next read comes from the cache. No prompt, no Hello.'],
+      [43.2, 46.6, 'A toast on the terminal says what was read.'],
+      [48.8, 50.0, 'A delete gets a prompt of its own.'],
+      [50.1, 51.9, 'Untick a field and the rule matches anything there.'],
+      [52.1, 53.5, 'Denied before op even runs.'],
+      [53.7, 55.2, "claude-code can't delete anything now, in any vault."],
+    ];
+    const current = lines.find(([a, b]) => t >= a - 0.25 && t <= b + 0.25);
+    $('caption').textContent = current ? current[2] : '';
+    $('caption').style.opacity = current ? span(t, current[0] - 0.25, current[0] + 0.1, current[1] - 0.1, current[1] + 0.25) : 0;
+  }
+
+  // Entries grow into place and the console scrolls to keep the newest above the input box.
+  function transcript(t, session) {
+    let total = 0;
+    for (const entry of session.entries) {
+      const grow = entry.at < 0 ? 1 : easeOut(seg(t, entry.at, entry.at + 0.18));
+      const p = entry.until === undefined ? grow : Math.min(grow, 1 - easeInOut(seg(t, entry.until - 0.05, entry.until + 0.13)));
+      entry.el.style.height = entry.height * p + 'px';
+      entry.el.style.opacity = p;
+      total += entry.height * p;
+      if (entry.kind === 'tool') {
+        const bullet = entry.el.querySelector('.bullet');
+        const running = t < entry.done;
+        bullet.style.color = running ? '#9a9a9a' : entry.failed ? 'var(--cc-error)' : 'var(--cc-ok)';
+        bullet.style.opacity = running ? 0.35 + 0.65 * (0.5 + 0.5 * Math.cos(2 * Math.PI * 1.2 * (t - entry.at))) : 1;
+      }
+    }
+    session.scroll = Math.max(0, total - 316);
+    session.el.style.transform = `translateY(${-session.scroll}px)`;
+    const [from, to] = session.shown;
+    session.el.style.opacity = from < 0 ? 1 - easeInOut(seg(t, to - 0.4, to)) : easeOut(seg(t, from, from + 0.4));
+  }
+
+  function terminal(t) {
+    SESSIONS.forEach(session => transcript(t, session));
+    const typing = SESSIONS.flatMap(s => s.typing).find(([a, b]) => t >= a && t < b + 0.15);
+    $('typed').textContent = typing ? typing[2].slice(0, Math.round(typing[2].length * seg(t, typing[0], typing[1]))) : '';
+    $('caret').style.opacity = typing || Math.floor(t * 2) % 2 === 0 ? 1 : 0;
+    const busy = SESSIONS.flatMap(s => s.busy).find(([a, b]) => t >= a && t < b);
+    $('status').textContent = busy ? `${SPINNER[Math.floor(t * 8) % SPINNER.length]} Running… (esc to interrupt)` : '';
+  }
+
+  // The stage point of a tool entry's command, for the trail that runs to the audit log.
+  function toolPoint(session, index) {
+    const entry = session.entries[index];
+    const [x, y] = anchor(entry.el, 0, 0);
+    return [x + 360, y - session.scroll + entry.height - 9];
+  }
+
+  // 1Password's request and Windows Hello for whichever op CLI run is underway.
+  function access(t) {
+    const r = REQUESTS.find(r => t >= r.shown && t < r.gone + 0.3);
+    if (!r) {
+      place($('op-request'), { opacity: 0 });
+      place($('hello'), { opacity: 0 });
+      return;
+    }
+
+    $('op-caller').textContent = r.caller;
+    $('op-caller').className = `marker ${r.mark ?? ''}`;
+    $('op-caller').style.setProperty('--mark', r.marked ? easeOut(seg(t, r.marked, r.marked + 0.4)) : 0);
+
+    const hello = r.authorize + HELLO_AFTER;
+    place($('op-request'), { scale: lerp(0.96, 1, easeOut(seg(t, r.shown, r.shown + 0.25))), opacity: span(t, r.shown, r.shown + 0.25, r.authorize + 0.05, hello + 0.1) });
+    const open = r.expand ? easeInOut(seg(t, r.expand, r.expand + 0.3)) : 0;
+    $('op-details').style.height = $('op-details').firstElementChild.offsetHeight * open + 'px';
+    $('op-chevron').style.transform = `rotate(${90 * open}deg)`;
+    $('op-authorize').style.background = t > r.authorize - 0.3 && t < r.authorize + 0.1 ? 'var(--op-blue-hover)' : '';
+
+    place($('hello'), { scale: lerp(0.97, 1, easeOut(seg(t, hello, hello + 0.2))), opacity: span(t, hello, hello + 0.2, r.gone, r.gone + 0.2) });
+    const digits = Math.round(6 * seg(t, r.pin[0], r.pin[1]));
+    $('hello-field').textContent = digits ? '●'.repeat(digits) : 'PIN';
+    $('hello-field').classList.toggle('empty', digits === 0);
+  }
+
+  function prompt(t, p, pinned, cacheChoice, hover) {
+    const shown = span(t, p.shown, p.shown + 0.3, p.gone, p.gone + 0.3);
+    place(p.el, { scale: lerp(0.96, 1, easeOut(seg(t, p.shown, p.shown + 0.3))), opacity: shown });
+    const decided = t >= p.decided;
+    const left = Math.ceil(30 - (t - p.shown));
+    const countdown = p.el.querySelector('.countdown');
+    countdown.textContent = decided ? 'Sent; waiting for the broker' : `${clamp(left, 1, 30)} s left`;
+    p.boxes.forEach((box, i) => box.classList.toggle('checked', pinned[i]));
+    p.segments.forEach((segment, i) => segment.classList.toggle('checked', i === cacheChoice));
+    p.buttons.forEach((button, i) => {
+      const deny = i >= 2;
+      button.style.background = i === hover && !decided ? (deny ? 'var(--ow-deny-hover)' : 'var(--ow-allow-hover)') : '';
+    });
+    p.locked.forEach(el => (el.style.opacity = decided ? 0.45 : ''));
+  }
+
+  function renderAt(t) {
+    // Intro and outro share the centre: the shield and the name, with the tagline first and
+    // the repository last, so the loop closes on the frame it opens with.
+    const centre = Math.max(1 - easeInOut(seg(t, 1.7, 2.2)), easeOut(seg(t, 55.6, 56.2)));
+    place($('center'), { scale: lerp(0.96, 1, easeOut(seg(t, 0, 0.6))) * lerp(1, 0.96, seg(t, 1.7, 2.2)), opacity: centre });
+    $('tagline').style.opacity = span(t, 0.3, 0.9, 1.6, 2.0);
+    $('url').style.opacity = span(t, 56.0, 56.6, 59.3, 59.8);
+
+    place($('terminal'), { y: lerp(24, 0, easeOut(seg(t, 2.0, 2.8))), scale: lerp(1, 0.98, seg(t, 55.2, 55.8)), opacity: span(t, 2.0, 2.8, 55.2, 55.8) });
+    place($('steps'), { opacity: span(t, 2.4, 3.0, 55.2, 55.6) });
+    const beat = t < 17.1 ? 0 : t < SWITCH + 0.5 ? 1 : t < 39.5 ? 2 : t < 46.9 ? 3 : 4;
+    [...$('steps').querySelectorAll('span')].forEach((s, i) => (s.style.color = i === beat ? '#fff' : ''));
+    [...$('steps').querySelectorAll('small')].forEach((s, i) => (s.style.color = (beat < 2) === (i === 0) ? '#c9d1db' : ''));
+
+    // The switch between the halves.
+    const between = span(t, SWITCH, SWITCH + 0.4, SWITCH + 1.1, SWITCH + 1.5);
+    place($('dim'), { opacity: between });
+    place($('with'), { scale: lerp(0.96, 1, easeOut(seg(t, SWITCH, SWITCH + 0.5))), opacity: between });
+
+    terminal(t);
+    access(t);
+
+    // The panel: what the access request says, and how often it asked. It stays through the
+    // switch, and OpWarden's prompt answers it line by line before the audit log takes over.
+    const before = span(t, 2.2, 3.0, SWITCH, SWITCH + 0.4);
+    const panel = span(t, 2.2, 3.0, 34.1, 34.4);
+    place($('told-head'), { x: lerp(24, 0, easeOut(seg(t, 2.2, 3.0))), opacity: span(t, 2.2, 3.0, 26.7, 27.0) });
+    place($('tells-head'), { opacity: span(t, 26.8, 27.2, 34.1, 34.4) });
+    place($('told'), { opacity: Math.min(panel, easeOut(seg(t, TOLD[0] - 0.2, TOLD[0]))) });
+    told.forEach((row, i) => {
+      place(row, { x: lerp(16, 0, easeOut(seg(t, TOLD[i], TOLD[i] + 0.3))), opacity: easeOut(seg(t, TOLD[i], TOLD[i] + 0.3)) });
+      const [struck, answered] = TELLS[i];
+      const strike = easeInOut(seg(t, struck, struck + 0.3));
+      row.style.setProperty('--strike', strike);
+      row.querySelector('.old').style.opacity = lerp(1, 0.5, strike);
+      place(row.querySelector('.now'), { x: lerp(12, 0, easeOut(seg(t, answered, answered + 0.3))), opacity: easeOut(seg(t, answered, answered + 0.3)) });
+    });
+    const approvals = REQUESTS.filter(r => r.gone < SWITCH && t >= r.gone).length;
+    const bump = REQUESTS.map(r => r.gone).filter(g => g < SWITCH && t >= g).map(g => 1 - seg(t, g, g + 0.5)).reduce((a, b) => Math.max(a, b), 0);
+    $('tally-count').textContent = approvals;
+    $('tally-label').textContent = `${approvals === 1 ? 'approval' : 'approvals'} for one secret`;
+    place($('tally'), { opacity: Math.min(before, easeOut(seg(t, TOLD[0], TOLD[0] + 0.3))) });
+    place($('tally-count'), { scale: 1 + 0.25 * easeOut(bump) });
+
+    const after = span(t, 34.2, 34.6, 55.3, 55.9);
+    place($('panel'), { x: lerp(24, 0, easeOut(seg(t, 34.2, 34.6))), opacity: after });
+
+    // Ask: the read prompts; its fields are spotlit one question at a time, then 1 hour of
+    // cache and Always allow.
+    const read = PROMPTS.read;
+    const [hourX, hourY] = anchor(read.segments[2]);
+    const [allowX, allowY] = anchor(read.buttons[1]);
+    prompt(t, read, [true, true, true, true, true], t >= 33.32 ? 2 : 0, t > 33.8 && t < 34.1 ? 1 : -1);
+    read.boxes.forEach((b, i) => {
+      const glow = span(t, 31.5 + 0.08 * i, 31.8 + 0.08 * i, 32.8, 33.2);
+      b.style.boxShadow = `0 0 0 ${3 * glow}px rgb(${GLOW.allow} / ${0.5 * glow})`;
+    });
+
+    // Refuse: the delete prompts; Vault and Item unpinned, then Always disallow.
+    const del = PROMPTS.delete;
+    const [vaultX, vaultY] = anchor(del.boxes[2]);
+    const [itemX, itemY] = anchor(del.boxes[3]);
+    const [denyX, denyY] = anchor(del.buttons[3]);
+    prompt(t, del, [true, true, t < 50.05, t < 50.6, false], -1, t > 51.55 && t < 51.85 ? 3 : -1);
+
+    // Markers on the words the spotlights are about. The 1Password dialog comes back for
+    // later requests, so the account marker belongs to the first one only; access() marks
+    // each request's caller.
+    const first = t < REQUESTS[0].gone;
+    $('op-full').style.setProperty('--mark', first ? easeInOut(seg(t, 11.3, 12.1)) : 0);
+    read.values.forEach((v, i) => {
+      const from = i === 0 ? 27.45 : 29.45 + 0.1 * (i - 1);
+      v.style.setProperty('--mark', easeOut(seg(t, from, from + 0.4)));
+    });
+    read.hint.style.setProperty('--mark', easeInOut(seg(t, 31.5, 32.3)));
+
+    // Remember: the read from the cache, reported on the terminal's top edge. A read toast
+    // lives 12 seconds; the bar counts that down.
+    const toast = span(t, 40.8, 41.2, 46.3, 46.7);
+    place($('toast'), { y: lerp(18, 0, easeOut(seg(t, 40.8, 41.2))), opacity: toast });
+    $('lifetime').style.transform = `scaleX(${1 - seg(t, 40.8, 52.8)})`;
+
+    // Each invocation flies from the command that made it to the top card slot, landing as
+    // its card appears. Rules come from the prompt, so their cards just appear.
+    const panelTop = [800, 222 + 30];
+    if (t < 39) sparks(t, toolPoint(AFTER, 3), panelTop, 37.15, 37.75, GLOW.allow);
+    else if (t < 46) sparks(t, toolPoint(AFTER, 7), panelTop, 40.5, 41.1, GLOW.cache);
+    else sparks(t, toolPoint(AFTER, 11), panelTop, 52.1, 52.7, GLOW.deny);
+
+    // Audit cards: each new one slides in on top once the others have moved down.
+    const arrivals = CARDS.filter(c => c.since > 0).map(c => c.since);
+    const pushed = since => arrivals.filter(a => a > since).reduce((sum, a) => sum + easeInOut(seg(t, a - MAKE_ROOM, a)), 0);
+    const history = CARDS.filter(c => c.since < 0);
+    CARDS.forEach(card => {
+      const slot = (card.since < 0 ? history.indexOf(card) : 0) + pushed(card.since);
+      const enter = card.since < 0 ? 1 : easeOutBack(seg(t, card.since, card.since + 0.5));
+      const glow = card.since < 0 ? 0 : span(t, card.since, card.since + 0.3, card.since + 1.2, card.since + 2.2);
+      card.el.style.top = CARD_Y(slot) + 'px';
+      card.el.style.boxShadow = `0 0 0 ${2 * glow}px rgb(${card.glow} / ${glow}), 0 0 ${24 * glow}px rgb(${card.glow} / ${0.5 * glow})`;
+      const visible = card.since < 0 ? after : Math.min(seg(t, card.since, card.since + 0.25), after);
+      place(card.el, { x: lerp(30, 0, clamp(enter, 0, 1.2)), opacity: visible });
+    });
+
+    // The pointer, and a ring for each click. Each stretch enters from below and leaves the
+    // same way; the anchors follow the layout, so the 1Password details can open in between.
+    const away = [700, 700];
+    const [chevX, chevY] = anchor($('op-chevron'));
+    const [authX, authY] = anchor($('op-authorize'));
+    const exit = ([x, y]) => [x + 50, y + 90];
+    const STRETCHES = [
+      [9.9, 11.4, [[9.9, away], [10.4, [chevX, chevY]], [10.65, [chevX, chevY]], [11.4, exit([chevX, chevY])]]],
+      [13.2, 14.5, [[13.2, away], [13.8, [authX, authY]], [14.05, [authX, authY]], [14.5, exit([authX, authY])]]],
+      [18.6, 19.8, [[18.6, away], [19.2, [authX, authY]], [19.4, [authX, authY]], [19.8, exit([authX, authY])]]],
+      [32.6, 34.5, [[32.6, away], [33.2, [hourX, hourY]], [33.4, [hourX, hourY]], [33.85, [allowX, allowY]], [34.1, [allowX, allowY]], [34.5, exit([allowX, allowY])]]],
+      [34.7, 36.65, [[34.7, exit([authX, authY])], [35.6, exit([authX, authY])], [36.05, [authX, authY]], [36.25, [authX, authY]], [36.65, exit([authX, authY])]]],
+      [49.3, 52.3, [[49.3, away], [49.9, [vaultX, vaultY]], [50.1, [vaultX, vaultY]], [50.45, [itemX, itemY]], [50.65, [itemX, itemY]], [51.1, [itemX, itemY]], [51.65, [denyX, denyY]], [51.9, [denyX, denyY]], [52.3, exit([denyX, denyY])]]],
+    ];
+    const stretch = STRETCHES.find(([a, b]) => t >= a && t <= b);
+    if (stretch) {
+      const [a, b, keys] = stretch;
+      const [x, y] = track(t, keys);
+      place($('cursor'), { x, y, opacity: span(t, a, a + 0.3, b - 0.35, b) });
+    } else {
+      place($('cursor'), { opacity: 0 });
+    }
+
+    const CLICKS = [[10.6, [chevX, chevY]], [14.0, [authX, authY]], [19.35, [authX, authY]], [33.32, [hourX, hourY]], [34.05, [allowX, allowY]], [36.2, [authX, authY]], [50.05, [vaultX, vaultY]], [50.6, [itemX, itemY]], [51.8, [denyX, denyY]]];
+    const click = CLICKS.find(([at]) => t >= at && t < at + 0.4);
+    if (click) {
+      const p = seg(t, click[0], click[0] + 0.4);
+      place($('ripple'), { x: click[1][0], y: click[1][1], scale: lerp(0.3, 1.3, easeOut(p)), opacity: 1 - p });
+    } else {
+      place($('ripple'), { opacity: 0 });
+    }
+
+    spotlight(t);
+    caption(t);
+  }
+
+  window.renderAt = renderAt;
+  window.DURATION = DURATION;
+
+  if (new URLSearchParams(location.search).has('render')) {
+    document.body.classList.add('rendering');
+    renderAt(0);
+  } else {
+    // Preview: play in real time, loop, and scrub with the slider.
+    const fit = () => {
+      const scale = Math.min(innerWidth / 1280, (innerHeight - 52) / 720);
+      stage.style.scale = scale;
+      stage.style.left = `${(innerWidth - 1280 * scale) / 2}px`;
+    };
+    addEventListener('resize', fit);
+    fit();
+
+    let playing = true;
+    let offset = 0;
+    let started = performance.now();
+    const scrub = $('scrub');
+    $('play').addEventListener('click', () => {
+      offset = Number(scrub.value);
+      started = performance.now();
+      playing = !playing;
+      $('play').textContent = playing ? 'Pause' : 'Play';
+    });
+    scrub.addEventListener('input', () => {
+      offset = Number(scrub.value);
+      started = performance.now();
+      renderAt(offset);
+    });
+    const frame = now => {
+      if (playing) {
+        const t = (offset + (now - started) / 1000) % DURATION;
+        scrub.value = t;
+        $('clock').textContent = `${t.toFixed(2)} s`;
+        renderAt(t);
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+</script>
+</body>
+</html>

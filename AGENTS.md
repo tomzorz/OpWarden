@@ -5,6 +5,7 @@ A local authorization broker that gates every 1Password CLI invocation behind a 
 - [docs/SPEC.md](docs/SPEC.md) is the single normative source, written in controlled English (Lojbanlite). Read it before changing behaviour. Decisions are recorded inline, dated, in the section they affect; there is no separate decisions file.
 - [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) holds the build order, the Win32 map, the testing approach and the known traps. Where it disagrees with the spec, the spec wins.
 - The solution lives in `sources/OpWarden/`. `sources/spike-argv/` is the spike that settled sections 5 and 9; it is reference, not product.
+- `sources/DemoVideo` renders the 1080p MP4 at the top of the README; change the page and run `node render.mjs` again. The MP4 stays out of the repo: the README embeds it as a GitHub attachment, so a new render goes up by dragging it into the README in GitHub's web editor in place of the old attachment URL. Its prompt, toast and colours copy the session agent's XAML, so a UI change there means a change here.
 - This repository is public. It carries no reference to any particular machine: no drive paths, host names, account names or vault and item names, in code, docs or commit messages. Spike traces (`*.jsonl`, `*.log`) record a machine's process tree and secret references and stay gitignored.
 - Git: single-branch. Work on `main`, commit to `main`, push `main`.
 

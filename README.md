@@ -1,5 +1,7 @@
 # OpWarden
 
+https://github.com/user-attachments/assets/06dac76b-596a-49e2-9b89-d03857a55444
+
 A local authorization broker for the 1Password CLI on Windows. Every `op` invocation goes through OpWarden first, which decides per secret and per caller whether it runs, and logs it either way.
 
 ## Why
@@ -94,6 +96,7 @@ The end-to-end tests run the built shim and a probe executable as real processes
 - `sources/OpWarden/`: the solution (Core, Shim, Broker, SessionAgent, Probe, Tests)
 - `sources/spike-*`: the spikes that settled caller resolution, the cache surface and the service account (kept for reference, not shipped)
 - `install/`: publish, install and uninstall scripts
+- `sources/DemoVideo`: the video at the top of this README, an HTML page that plays in any browser. `node render.mjs` renders it frame by frame at 1080p through headless Edge, and ffmpeg encodes a 1080p MP4 from those frames, which the README embeds as a GitHub attachment. It needs Node 22, Edge and ffmpeg, and nothing from npm.
 
 ## License
 
