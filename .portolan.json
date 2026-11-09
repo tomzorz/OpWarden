@@ -1,0 +1,4 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tomzorz/portolan/main/docs/project.schema.json",
+  "description": "Authorization broker in front of the 1Password CLI on Windows: a shim op.exe asks a broker service which process is calling for which secret, applies rules or prompts the user, and keeps a tamper-evident audit log."
+}
