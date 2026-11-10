@@ -2,6 +2,8 @@
 
 A local authorization broker that gates every 1Password CLI invocation behind a per-secret, per-caller permission model. Windows only.
 
+This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
+
 - [docs/SPEC.md](docs/SPEC.md) is the single normative source, written in controlled English (Lojbanlite). Read it before changing behaviour. Decisions are recorded inline, dated, in the section they affect; there is no separate decisions file.
 - [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) holds the build order, the Win32 map, the testing approach and the known traps. Where it disagrees with the spec, the spec wins.
 - The solution lives in `sources/OpWarden/`. `sources/spike-argv/` is the spike that settled sections 5 and 9; it is reference, not product.
