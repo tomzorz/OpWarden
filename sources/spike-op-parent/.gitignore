@@ -1,0 +1,7 @@
+# Build output.
+[Bb]in/
+[Oo]bj/
+
+# Spike results: process IDs and what a prompt said on one machine. Local evidence, never committed.
+*.jsonl
+*.log

@@ -48,7 +48,7 @@ $started = [DateTimeOffset]::UtcNow
 # Windows PowerShell leaves $PSScriptRoot empty while it binds parameter defaults.
 if (-not $Source) { $Source = Join-Path $PSScriptRoot '..\artifacts\publish' }
 $Source = [IO.Path]::GetFullPath($Source)
-foreach ($exe in 'OpWarden.Broker.exe', 'agent\OpWarden.SessionAgent.exe', 'shim\op.exe') {
+foreach ($exe in 'OpWarden.Broker.exe', 'agent\OpWarden.SessionAgent.exe', 'shim\op.exe', 'shim\OpWarden.exe') {
     if (-not (Test-Path (Join-Path $Source $exe))) { throw "$exe is missing from $Source; run .\install\publish.ps1 first, unelevated." }
 }
 
@@ -92,10 +92,12 @@ if ($PSCmdlet.ShouldProcess($agent, 'Stop the running session agent')) {
 }
 
 # 2. The executables (spec section 14, step 2), and the record of what this install changes.
-if ($PSCmdlet.ShouldProcess($InstallDirectory, 'Copy the broker, the session agent and the shim')) {
+if ($PSCmdlet.ShouldProcess($InstallDirectory, 'Copy the broker, the session agent, the shim and the launcher')) {
     New-Item -ItemType Directory -Force $shimDirectory | Out-Null
     Copy-Item (Join-Path $Source 'OpWarden.Broker.exe') $broker -Force
     Copy-Item (Join-Path $Source 'shim\op.exe') (Join-Path $shimDirectory 'op.exe') -Force
+    # The launcher is the shim under the name the desktop app's prompt shows (REQ-SHIM-11).
+    Copy-Item (Join-Path $Source 'shim\OpWarden.exe') (Join-Path $shimDirectory 'OpWarden.exe') -Force
 
     # The session agent's folder is replaced whole, so no file of an older runtime lingers.
     if (Test-Path $agentDirectory) { Remove-Item $agentDirectory -Recurse -Force }

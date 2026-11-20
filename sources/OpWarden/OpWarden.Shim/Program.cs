@@ -19,7 +19,7 @@ internal static class Program
     // failures, which exit 1.
     private const int ExitDenied = 77;            // EX_NOPERM
     private const int ExitBrokerUnavailable = 69; // EX_UNAVAILABLE
-    private const int ExitOpLaunchFailed = 71;    // EX_OSERR
+    internal const int ExitOpLaunchFailed = 71;   // EX_OSERR
 
     private const int ConnectTimeoutMilliseconds = 2000;
 
@@ -29,6 +29,8 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
+        if (Launcher.IsThisProcess) return await Launcher.MainAsync(args);
+
         var request = ShimRequestBuilder.Build(args, ReadEnvironment());
         var pipeName = PipeProtocol.ResolvePipeName();
 
@@ -74,11 +76,8 @@ internal static class Program
     /// </summary>
     private static async Task<int> RunAsync(string opPath, string[] args)
     {
-        using var child = Start(opPath, args, redirectStdout: false);
-        if (child is null) return ExitOpLaunchFailed;
-
-        await child.WaitForExitAsync();
-        return child.ExitCode;
+        await using var op = await Launcher.StartAsync(opPath, args, redirectStdout: false);
+        return op is null ? ExitOpLaunchFailed : await op.WaitForExitAsync();
     }
 
     /// <summary>
@@ -87,8 +86,8 @@ internal static class Program
     /// </summary>
     private static async Task<int> RunCapturingAsync(string opPath, string[] args, Stream pipe)
     {
-        using var child = Start(opPath, args, redirectStdout: true);
-        if (child is null) return ExitOpLaunchFailed;
+        await using var op = await Launcher.StartAsync(opPath, args, redirectStdout: true);
+        if (op is null) return ExitOpLaunchFailed;
 
         var buffer = new byte[16 * 1024];
         using var capture = new MemoryStream();
@@ -96,7 +95,7 @@ internal static class Program
         await using (var stdout = Console.OpenStandardOutput())
         {
             var relaying = true;
-            var source = child.StandardOutput.BaseStream;
+            var source = op.StandardOutput;
             int read;
             while ((read = await source.ReadAsync(buffer)) > 0)
             {
@@ -120,12 +119,12 @@ internal static class Program
             }
         }
 
-        await child.WaitForExitAsync();
+        var exitCode = await op.WaitForExitAsync();
 
         var output = truncated ? [] : capture.ToArray();
         try
         {
-            await PipeProtocol.WriteAsync(pipe, new ReadCapture(child.ExitCode, output, truncated), CancellationToken.None);
+            await PipeProtocol.WriteAsync(pipe, new ReadCapture(exitCode, output, truncated), CancellationToken.None);
         }
         catch (IOException e)
         {
@@ -140,31 +139,7 @@ internal static class Program
             CryptographicOperations.ZeroMemory(buffer);
         }
 
-        return child.ExitCode;
-    }
-
-    private static Process? Start(string opPath, string[] args, bool redirectStdout)
-    {
-        // ArgumentList re-quotes the arguments canonically, so the op CLI receives exactly
-        // the argv the classifier saw. Forwarding the raw command line instead would let
-        // a quoting quirk mean one thing to .NET's parser and another to Go's.
-        var startInfo = new ProcessStartInfo(opPath) { UseShellExecute = false, RedirectStandardOutput = redirectStdout };
-        foreach (var arg in args) startInfo.ArgumentList.Add(arg);
-
-        try
-        {
-            var child = Process.Start(startInfo) ?? throw new Win32Exception($"Process.Start returned no process for {opPath}");
-
-            // Ctrl+C reaches the op CLI through the shared console. The shim waits it
-            // out so the op CLI's exit code still comes back.
-            Console.CancelKeyPress += (_, e) => e.Cancel = true;
-            return child;
-        }
-        catch (Win32Exception e)
-        {
-            Console.Error.WriteLine($"opwarden: could not start the op CLI at {opPath} ({e.Message}).");
-            return null;
-        }
+        return exitCode;
     }
 
     /// <summary>

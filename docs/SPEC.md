@@ -19,8 +19,12 @@ The 1Password desktop application that opens the named pipe and shows the biomet
 Do not use: 1Password, the app.
 
 ### shim (noun)
-The OpWarden executable that takes the name `op.exe` on `PATH` ahead of the op CLI, and that runs the op CLI, or serves cached output, after the broker returns a verdict.
+The OpWarden executable that takes the name `op.exe` on `PATH` ahead of the op CLI, and that runs the op CLI through the launcher, or serves cached output, after the broker returns a verdict.
 Do not use: wrapper, proxy, interceptor.
+
+### launcher (noun)
+The shim executable, installed a second time in the shim's directory under the file name `OpWarden.exe`. A launcher process is a process that runs the launcher. The shim starts two launcher processes for each op CLI run (REQ-SHIM-12).
+Do not use: relay, helper, `OpWarden.exe` (alone).
 
 ### broker (noun)
 The privileged OpWarden process, installed as a Windows service under the service account, that owns the rule store, the audit log, the cache, the bypass watcher, caller resolution, and verdicts.
@@ -138,7 +142,7 @@ For repeated reads, such as OpenTofu runs against the homelab, the user can gran
 
 OpWarden has three executables, two data files, and two in-memory stores:
 
-- The shim: a small executable named `op.exe`, placed on `PATH` ahead of the op CLI. The shim parses the invocation, asks the broker for a verdict over a local named pipe, and acts on the verdict. The shim never connects to the desktop app's named pipe.
+- The shim: a small executable named `op.exe`, placed on `PATH` ahead of the op CLI. The shim parses the invocation, asks the broker for a verdict over a local named pipe, and acts on the verdict. The shim never connects to the desktop app's named pipe. The same executable, installed under the file name `OpWarden.exe`, is the launcher, which starts the op CLI (REQ-SHIM-11).
 - The broker: a Windows service under the service account. The broker maintains the process map, resolves the caller, matches rules, evaluates cache grants, serializes prompts through the session agent, runs the bypass watcher, and writes the audit log.
 - The session agent: an unprivileged process that starts at each logon in the interactive user's logon session, and that the broker pins (REQ-TRUST-3, REQ-TRUST-4). The session agent renders prompts, notifications, and the management window. The session agent holds no state.
 - The rule store and the audit log: files in the data directory, writable only by the service account and by Administrators (REQ-TRUST-2).
@@ -175,11 +179,11 @@ op  →  SHIM (op.exe on PATH)
         ▼
     verdict + AUDIT LOG entry
         │
-        ├─ allow  → SHIM runs op CLI, relays stdio, tees read output to broker
+        ├─ allow  → SHIM runs op CLI through the LAUNCHER, relays stdio, tees read output to broker
         ├─ cached → SHIM prints cached output, exits 0
         └─ deny   → SHIM exits non-zero, op CLI not run
 
-  BYPASS WATCHER: op.exe starts without a shim parent
+  BYPASS WATCHER: op.exe starts without the launcher chain from a shim
       → bypass audit entry + notification to the session agent
 ```
 
@@ -204,6 +208,18 @@ REQ-SHIM-8: The shim SHOULD add less than 50 milliseconds of latency to an invoc
 REQ-SHIM-9: When the verdict is `allow` and the action is `read`, the shim MUST relay the op CLI's standard output and, at the same time, capture a copy. After the op CLI exits, the shim MUST send the captured copy to the broker.
 
 REQ-SHIM-10: When the broker returns cached output, the shim MUST write the cached output to standard output, MUST exit with code 0, and MUST NOT run the op CLI.
+
+REQ-SHIM-11: When the shim runs the op CLI, the shim MUST start the op CLI through the launcher, as REQ-SHIM-12 to REQ-SHIM-14 state.
+
+REQ-SHIM-12: The shim MUST start a first launcher process. The first launcher process MUST start a second launcher process. After that start, the first launcher process MUST exit.
+
+REQ-SHIM-13: The second launcher process MUST start the op CLI process only after the first launcher process has exited. The reason is the prompt-name decision below: the desktop app names the last running process in the ancestry of the op CLI process.
+
+REQ-SHIM-14: When the shim exits before the op CLI process exits, the second launcher process MUST end the op CLI process and each descendant of the op CLI process. The reason is that a caller that ends the shim's process tree cannot reach a process below the exited first launcher process.
+
+REQ-SHIM-15: When the launcher is missing from the shim's directory, the shim MUST NOT run the op CLI, MUST exit non-zero, and MUST print one line to standard error that names the launcher's expected path.
+
+**Prompt-name decision (2026-11-20):** Tamás chose that the biometric prompt names OpWarden for each op CLI run that the shim starts. Before this decision, the biometric prompt named the last running shell above the shim: `bash` under an MSYS2 shell, and `sihost` under Windows Terminal. A spike measured the rule that the desktop app follows (`sources/spike-op-parent/`). The desktop app walks the chain of running parent processes upward from the op CLI process. The desktop app names the last process that the walk reaches, by the executable file name of that process without the extension. While a process above the op CLI's parent process runs, the file name of the parent process does not change the name. When the parent process of the op CLI process has no running parent, the desktop app names that parent process. REQ-SHIM-11 to REQ-SHIM-15 build that shape. The launcher is the shim executable under a second file name, so the build gains no project, and the install gains one file. In each shape that the spike measured, each op CLI run needed its own Windows Hello approval, so the launcher adds no approval (section 16, 1Password session scope). With the launcher, the published shim adds about 26 milliseconds to an allowed invocation. Without the launcher, the published shim added about 11 milliseconds. REQ-SHIM-8 allows 50 milliseconds.
 
 ## 5. Requirements: caller resolution
 
@@ -537,7 +553,13 @@ REQ-CACHE-16: When the broker returns cached output, the broker MUST notify the 
 
 REQ-WATCH-1: The bypass watcher MUST read the process-creation events that REQ-CALL-1 already subscribes to, and the bypass watcher MUST select the events whose image path is the op CLI's executable path. The reason is that one subscription serves both the process map and the bypass watcher, and a second subscription would double the event cost that REQ-CALL-3 bounds.
 
-REQ-WATCH-2: When the op CLI starts and the parent process is not a shim process, the broker MUST append a `bypass` entry to the audit log, with the ancestor chain that section 5 resolves. The reason for resolving the chain the same way is that a bypassing caller is exactly the caller whose ancestry the Windows process table is least likely to hold.
+REQ-WATCH-2: The broker MUST classify a start of the op CLI as cooperative only when all three of the following hold in the process map:
+
+- The parent process of the op CLI process runs the launcher.
+- The parent process of the process in the first item runs the launcher.
+- The parent process of the process in the second item is a shim process.
+
+When a start of the op CLI is not cooperative, the broker MUST append a `bypass` entry to the audit log, with the ancestor chain that section 5 resolves. The reason for resolving the chain the same way is that a bypassing caller is exactly the caller whose ancestry the Windows process table is least likely to hold. The reason for the process map is that REQ-SHIM-12 makes the first launcher process exit before the op CLI starts, so the Windows process table no longer holds that link.
 
 REQ-WATCH-3: When the broker appends a `bypass` entry, the broker MUST notify the session agent, and the session agent MUST show a notification.
 
@@ -591,9 +613,13 @@ After OpWarden is installed, every cooperative invocation reaches the desktop ap
 
 Preconditions: the install procedure in section 14 completed, and the shim is first on `PATH`.
 
-1. When the desktop app shows the biometric prompt, check the session agent for a matching prompt or a recent `allow` verdict.
-2. If no matching OpWarden activity exists, select **Cancel** on the biometric prompt.
-3. Read the newest `bypass` entries in the audit log to identify the caller.
+1. When the desktop app shows the biometric prompt, read the process name in the biometric prompt.
+2. If the name is not `OpWarden`, select **Cancel** on the biometric prompt, and continue at step 5.
+3. Check the session agent for a matching prompt or a recent `allow` verdict.
+4. If no matching OpWarden activity exists, select **Cancel** on the biometric prompt.
+5. Read the newest `bypass` entries in the audit log to identify the caller.
+
+The name `OpWarden` does not prove that an invocation passed the shim (section 16, prompt name), so step 3 still applies to it.
 
 Note: a caller that bypasses the shim while the op CLI session is warm triggers no biometric prompt. The bypass watcher (section 10) covers that case.
 
@@ -639,7 +665,8 @@ Rollback:
 - Session-agent replacement: the pinning in REQ-TRUST-4 raises the bar against decision forgery. A same-user process can still inject code into the pinned session agent, or kill it and race a copy of the installed executable to the pin. Both are detectable through the audit log, not preventable.
 
 - Tree escape: an agent can start a process outside its own ancestry, for example through `explorer.exe`, a COM activation, or a scheduled task. The walk from that process reaches a logon shell without passing the agent host. The broker then classifies its invocations as the interactive user, and OpWarden does not detect the escape.
-- 1Password session scope: on Windows, the op CLI ties an authorization to the identifier and start time of the process that invokes the op CLI. Behind the shim, that process is the shim, which is new for each invocation. Each invocation that runs the op CLI therefore needs its own Windows Hello approval. Agent harnesses start a new shell for each command, and `$(op read …)` runs in a new subshell, so neither case loses an approval it had. A person who runs several op CLI commands in one terminal does lose one.
+- 1Password session scope: on Windows, the op CLI ties an authorization to the identifier and start time of the process that invokes the op CLI. Behind the shim, that process is the second launcher process, which is new for each invocation. Each invocation that runs the op CLI therefore needs its own Windows Hello approval. Agent harnesses start a new shell for each command, and `$(op read …)` runs in a new subshell, so neither case loses an approval it had. A person who runs several op CLI commands in one terminal does lose one.
+- Prompt name: the name `OpWarden` in the biometric prompt marks a cooperative invocation, and the name does not prove one. A same-user process can start the op CLI under a copy of the launcher whose parent has exited. The desktop app reads the name from running processes, and Windows can reuse the identifier of the exited first launcher process. When the desktop app does not compare start times, the biometric prompt can then name an unrelated process. The spike did not measure whether the desktop app compares start times. The failure is then a cancelled prompt under section 13, and the failure is not a passed one.
 
 - Origin window: Windows Terminal hosts several windows in one process, and REQ-RULE-41 selects the frontmost one. When the interactive user switches to another Windows Terminal window before the read, the notification sits on that window. A console program that Windows hands to Windows Terminal as the default terminal has no terminal among its ancestors, so its notifications use the corner of REQ-RULE-44.
 
@@ -662,7 +689,7 @@ Rollback:
 
 The session agent routes every decision through one acceptance check, so either answer fits without rework.
 
-**1Password session scope (opened 2026-10-10).** Section 16 records that each op CLI run behind the shim needs its own Windows Hello approval. The shim can create the op CLI process with the shim's own parent as the new process's parent (`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`). The op CLI then sees the same invoking process as without OpWarden, and one approval covers a terminal again. The costs: the shim must duplicate its standard handles into the parent process, and the bypass watcher must recognize an op CLI process that a shim created without parenting it. Deferred until the cache is in daily use.
+**1Password session scope (opened 2026-10-10).** Section 16 records that each op CLI run behind the shim needs its own Windows Hello approval. The shim can create the op CLI process with the shim's own parent as the new process's parent (`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`). The op CLI then sees the same invoking process as without OpWarden, and one approval covers a terminal again. The costs: the shim must duplicate its standard handles into the parent process, and the bypass watcher must recognize an op CLI process that a shim created without parenting it. A third cost follows from the prompt-name decision in section 4: the biometric prompt would name the caller's shell again, and no longer OpWarden. Deferred until the cache is in daily use.
 
 Every other decision this document opened is resolved and recorded in the section it affects.
 

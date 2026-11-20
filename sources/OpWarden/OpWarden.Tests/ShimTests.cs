@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using OpWarden.Broker.Callers;
 using OpWarden.Core;
 using OpWarden.Core.Pipe;
 
@@ -14,10 +15,13 @@ public sealed class ShimTests : IDisposable
 {
     private const int ExitDenied = 77;
     private const int ExitBrokerUnavailable = 69;
+    private const int ExitOpLaunchFailed = 71;
 
     private readonly DirectoryInfo _directory = Directory.CreateTempSubdirectory("opwarden-shim-");
 
     private string ArgvFile => Path.Combine(_directory.FullName, "argv.json");
+
+    private string PidFile => Path.Combine(_directory.FullName, "pid.txt");
 
     public void Dispose() => _directory.Delete(recursive: true);
 
@@ -187,6 +191,54 @@ public sealed class ShimTests : IDisposable
     }
 
     [Fact]
+    public async Task The_op_cli_starts_under_the_launcher_after_the_relay_has_exited()
+    {
+        await using var harness = ShimHarness.Start(_ => VerdictResponse.RunOp(BuiltExecutables.Probe));
+        using var shim = ShimHarness.StartShim(harness.PipeName, ["whoami"], ProbeEnvironment(("PROBE_PID_FILE", PidFile), ("PROBE_ECHO_STDIN", "1")));
+
+        // The probe blocks on standard input, so its ancestry holds still while it is read.
+        var probe = LiveProcesses.Find(await ProbeProcessIdAsync());
+        var launcher = probe is { } p ? LiveProcesses.Find(p.ParentId) : null;
+        var relay = launcher is { } l ? LiveProcesses.Find(l.ParentId) : null;
+        shim.StandardInput.Close();
+        await shim.WaitForExitAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(launcher);
+        Assert.Equal("OpWarden.exe", Path.GetFileName(launcher.Value.ImagePath), ignoreCase: true);
+        Assert.False(relay is { } r && r.CreateTime <= launcher.Value.CreateTime, $"The launcher's parent {relay?.ImagePath} ({relay?.ProcessId}) still runs.");
+        Assert.Equal(0, shim.ExitCode);
+    }
+
+    [Fact]
+    public async Task An_op_cli_that_outlives_the_shim_is_ended()
+    {
+        await using var harness = ShimHarness.Start(_ => VerdictResponse.RunOp(BuiltExecutables.Probe));
+        using var shim = ShimHarness.StartShim(harness.PipeName, ["whoami"], ProbeEnvironment(("PROBE_PID_FILE", PidFile), ("PROBE_ECHO_STDIN", "1")));
+        using var probe = Process.GetProcessById(await ProbeProcessIdAsync());
+        _ = probe.SafeHandle;
+
+        // Standard input stays open, so nothing but the launcher can end the probe.
+        shim.Kill();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await probe.WaitForExitAsync(timeout.Token);
+
+        Assert.True(probe.HasExited);
+    }
+
+    [Fact]
+    public async Task A_missing_launcher_is_a_refusal_that_names_it()
+    {
+        foreach (var file in Directory.GetFiles(Path.GetDirectoryName(BuiltExecutables.Shim)!).Where(f => !Path.GetFileName(f).Equals("OpWarden.exe", StringComparison.OrdinalIgnoreCase))) File.Copy(file, Path.Combine(_directory.FullName, Path.GetFileName(file)));
+        await using var harness = ShimHarness.Start(_ => VerdictResponse.RunOp(BuiltExecutables.Probe));
+
+        var run = await harness.RunAsync(["whoami"], ProbeEnvironment(), shimPath: Path.Combine(_directory.FullName, "op.exe"));
+
+        Assert.Equal(ExitOpLaunchFailed, run.ExitCode);
+        Assert.Contains("launcher is missing", run.Stderr, StringComparison.Ordinal);
+        Assert.False(File.Exists(ArgvFile));
+    }
+
+    [Fact]
     public async Task A_burst_of_shims_each_gets_its_verdict()
     {
         await using var harness = ShimHarness.Start(_ => VerdictResponse.FromCache("ok"u8.ToArray()));
@@ -226,10 +278,38 @@ public sealed class ShimTests : IDisposable
 
         var timings = new List<TimeSpan>();
         for (var i = 0; i < 20; i++) timings.Add((await harness.RunAsync(["read", "op://v/i/f"], shimPath: aotShim)).Elapsed);
-        var median = timings.Order().ElementAt(timings.Count / 2);
+        var median = Median(timings);
 
         TestContext.Current.SendDiagnosticMessage($"AOT shim, cached verdict: median {median.TotalMilliseconds:F1} ms over {timings.Count} runs.");
         Assert.True(median < TimeSpan.FromMilliseconds(50), $"Median {median.TotalMilliseconds:F1} ms exceeds the 50 ms budget.");
+    }
+
+    /// <summary>
+    /// REQ-SHIM-8 for an invocation that runs the op CLI, through both launcher processes: the
+    /// published shim's median time to run the probe, less the probe's own median. Runs with
+    /// OPWARDEN_AOT_SHIM, like the cached case; publishing leaves the launcher beside op.exe.
+    /// </summary>
+    [Fact]
+    public async Task The_published_shim_adds_less_than_50_milliseconds_to_an_allowed_invocation()
+    {
+        var aotShim = Environment.GetEnvironmentVariable("OPWARDEN_AOT_SHIM");
+        Assert.SkipWhen(string.IsNullOrEmpty(aotShim), "OPWARDEN_AOT_SHIM is not set.");
+        await using var harness = ShimHarness.Start(_ => VerdictResponse.RunOp(BuiltExecutables.Probe));
+        await harness.RunAsync(["whoami"], shimPath: aotShim);
+        await RunProbeDirectlyAsync();
+
+        // Interleaved, so drift in machine load lands on both sides.
+        var direct = new List<TimeSpan>();
+        var throughShim = new List<TimeSpan>();
+        for (var i = 0; i < 20; i++)
+        {
+            direct.Add(await RunProbeDirectlyAsync());
+            throughShim.Add((await harness.RunAsync(["whoami"], shimPath: aotShim)).Elapsed);
+        }
+
+        var added = Median(throughShim) - Median(direct);
+        TestContext.Current.SendDiagnosticMessage($"AOT shim, allowed run: median {Median(throughShim).TotalMilliseconds:F1} ms against the probe's own {Median(direct).TotalMilliseconds:F1} ms, {added.TotalMilliseconds:F1} ms added.");
+        Assert.True(added < TimeSpan.FromMilliseconds(50), $"The shim adds {added.TotalMilliseconds:F1} ms, over the 50 ms budget.");
     }
 
     private Dictionary<string, string> ProbeEnvironment(params (string Name, string Value)[] settings)
@@ -240,6 +320,38 @@ public sealed class ShimTests : IDisposable
     }
 
     private string[] ReceivedArguments() => JsonSerializer.Deserialize<string[]>(File.ReadAllText(ArgvFile, Encoding.UTF8))!;
+
+    /// <summary>
+    /// The probe's process ID, once the probe has written it to <see cref="PidFile"/>.
+    /// </summary>
+    private async Task<int> ProbeProcessIdAsync()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (true)
+        {
+            try
+            {
+                if (int.TryParse(await File.ReadAllTextAsync(PidFile, timeout.Token), out var id)) return id;
+            }
+            catch (IOException)
+            {
+                // Not written yet, or the probe still holds it open for writing.
+            }
+
+            await Task.Delay(50, timeout.Token);
+        }
+    }
+
+    private static async Task<TimeSpan> RunProbeDirectlyAsync()
+    {
+        using var probe = Process.Start(new ProcessStartInfo(BuiltExecutables.Probe) { UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true })
+            ?? throw new InvalidOperationException($"Could not start the probe at {BuiltExecutables.Probe}.");
+        probe.StandardInput.Close();
+        await probe.WaitForExitAsync();
+        return probe.ExitTime - probe.StartTime;
+    }
+
+    private static TimeSpan Median(List<TimeSpan> timings) => timings.Order().ElementAt(timings.Count / 2);
 
     private static string? FindRealOpCli() =>
         (Environment.GetEnvironmentVariable("PATH") ?? "")

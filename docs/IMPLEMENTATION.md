@@ -8,7 +8,7 @@ Practical guidance for building what [SPEC.md](SPEC.md) describes. The spec is t
 sources/OpWarden/
   OpWarden.slnx
   OpWarden.Core/            pipe protocol, request/verdict types, argv classification, rule model
-  OpWarden.Shim/            NativeAOT, named op.exe, must stay tiny
+  OpWarden.Shim/            NativeAOT, named op.exe, must stay tiny; copied as OpWarden.exe, it is the launcher
   OpWarden.Broker/          the service (console-runnable for development)
   OpWarden.SessionAgent/    WPF: prompts, toasts, tray icon, status, audit log and rules windows
   OpWarden.Tests/           unit tests for Core, end-to-end tests that drive the real executables
@@ -44,6 +44,7 @@ REQ-SHIM-8 (under 50 ms on a rule hit) binds the shim, so the shim is NativeAOT,
 
 ## Win32 map
 
+- **Launcher** (REQ-SHIM-11 to REQ-SHIM-15, `Launcher.cs`): the shim picks its mode from its own file name, so one NativeAOT binary serves as op.exe and OpWarden.exe, and the csproj copies it after build and after publish. The code calls the first launcher process the relay. The relay hands the second launcher process's ID back as its exit code, because every standard stream already belongs to the op CLI. The second launcher process blocks on a byte from an inherited anonymous pipe, which the shim writes only after the relay has exited and the shim holds a handle to the second process. A successful write also proves the handle names the right process, since no other reader exists. Afterwards the same pipe is the lifeline: end-of-file there means the shim is gone, and the second process kills the op CLI's tree. That process never disposes the pipe, because closing a synchronous pipe handle under a pending read can block.
 - **Pipe client identity:** `GetNamedPipeClientProcessId` on each connection. It anchors caller resolution (the walk starts at the shim's PID) and session-agent pinning (REQ-TRUST-4). After the first message, `NamedPipeServerStream.RunAsClient` takes the client's token: the broker reads the agent hosts' executables as that user (REQ-CALL-24), and the management pipe asks it the elevation question.
 - **Pipe security:** every broker pipe comes from `NamedPipeServerStreamAcl.Create` with the broker's account at full control, the configured user SID at read/write (which leaves out `CreateNewInstance`), and a deny for the `NETWORK` SID (REQ-TRUST-9). The first instance is created with `FirstPipeInstance`, and a listener exists at all times, so the name is never free for a squatter (REQ-TRUST-10).
 - **Process facts:** `NtQuerySystemInformation`, class 5 (`SystemProcessInformation`) for parent PIDs, creation times and sessions, class 88 (`SystemProcessIdInformation`) for image paths. Neither opens the process, which the service account could not do for any user process (REQ-CALL-25). Class 88 is undocumented but stable since Vista; Process Explorer and psutil rely on it.

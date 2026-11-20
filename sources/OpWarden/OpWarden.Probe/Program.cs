@@ -5,6 +5,7 @@ using System.Text.Json;
 // the environment untouched and the arguments are the thing under test.
 //
 //   PROBE_ARGV_FILE   write the received arguments here as a JSON array
+//   PROBE_PID_FILE    write this process's ID here, so a test can see where the shim started it
 //   PROBE_STDOUT      print this to standard output
 //   PROBE_STDERR      print this to standard error
 //   PROBE_ECHO_STDIN  when "1", copy standard input to standard output
@@ -13,6 +14,11 @@ using System.Text.Json;
 if (Environment.GetEnvironmentVariable("PROBE_ARGV_FILE") is { Length: > 0 } argvFile)
 {
     await File.WriteAllTextAsync(argvFile, JsonSerializer.Serialize(args, ProbeJsonContext.Default.StringArray));
+}
+
+if (Environment.GetEnvironmentVariable("PROBE_PID_FILE") is { Length: > 0 } pidFile)
+{
+    await File.WriteAllTextAsync(pidFile, Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
 }
 
 await using var stdout = Console.OpenStandardOutput();

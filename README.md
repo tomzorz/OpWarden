@@ -14,7 +14,7 @@ That's fine while you're the only one typing `op`. It stops being fine once codi
 
 There are three executables:
 
-- **The shim** is an `op.exe` that sits on `PATH` ahead of the real one. It parses the command line, asks the broker for a verdict over a named pipe, and then runs the real op CLI, prints cached output, or refuses. The real op CLI still talks to the desktop app itself, so 1Password's own checks are unchanged and the desktop app never sees OpWarden.
+- **The shim** is an `op.exe` that sits on `PATH` ahead of the real one. It parses the command line, asks the broker for a verdict over a named pipe, and then runs the real op CLI, prints cached output, or refuses. The real op CLI still talks to the desktop app itself, so 1Password's own checks are unchanged and the desktop app never sees OpWarden. The shim starts the op CLI through a second copy of itself named `OpWarden.exe`, arranged so that 1Password's biometric prompt says OpWarden is asking, not whatever shell called `op`.
 - **The broker** is a Windows service running as `NT SERVICE\OpWarden`. It owns the rules, the audit log and the cache, works out who the caller is, and decides. Since it runs under its own account, a process running as you can't edit its rules, rewrite its log or read its cache.
 - **The session agent** runs in your logon session. It shows prompts, toast notifications, a tray icon, the audit log and the rules window, and holds no state.
 
@@ -94,7 +94,7 @@ The end-to-end tests run the built shim and a probe executable as real processes
 - `docs/SPEC.md`: the specification, and the record of every design decision
 - `docs/IMPLEMENTATION.md`: build order, Win32 notes, testing approach and known traps
 - `sources/OpWarden/`: the solution (Core, Shim, Broker, SessionAgent, Probe, Tests)
-- `sources/spike-*`: the spikes that settled caller resolution, the cache surface and the service account (kept for reference, not shipped)
+- `sources/spike-*`: the spikes that settled caller resolution, the cache surface and the service account, and the one that measured which process the desktop app's prompt names (kept for reference, not shipped)
 - `install/`: publish, install and uninstall scripts
 - `sources/DemoVideo`: the video at the top of this README, an HTML page that plays in any browser. `node render.mjs` renders it frame by frame at 1080p through headless Edge, and ffmpeg encodes a 1080p MP4 from those frames, which the README embeds as a GitHub attachment. It needs Node 22, Edge and ffmpeg, and nothing from npm.
 

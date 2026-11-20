@@ -11,6 +11,7 @@ install.ps1 expects:
   artifacts\publish\OpWarden.Broker.exe
   artifacts\publish\agent\OpWarden.SessionAgent.exe   (and the runtime beside it)
   artifacts\publish\shim\op.exe
+  artifacts\publish\shim\OpWarden.exe                 (the launcher: op.exe under a second name)
 #>
 [CmdletBinding()]
 param(
@@ -46,7 +47,7 @@ foreach ($p in $projects) {
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish $($p.Project) failed with exit code $LASTEXITCODE." }
 }
 
-foreach ($exe in 'OpWarden.Broker.exe', 'agent\OpWarden.SessionAgent.exe', 'shim\op.exe') {
+foreach ($exe in 'OpWarden.Broker.exe', 'agent\OpWarden.SessionAgent.exe', 'shim\op.exe', 'shim\OpWarden.exe') {
     $path = Join-Path $Output $exe
     if (-not (Test-Path $path)) { throw "Publishing finished but $path is missing." }
 }

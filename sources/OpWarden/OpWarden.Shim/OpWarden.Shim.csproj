@@ -19,4 +19,16 @@
     <ProjectReference Include="..\OpWarden.Core\OpWarden.Core.csproj" />
   </ItemGroup>
 
+  <!-- REQ-SHIM-11: the launcher is this executable under the file name OpWarden.exe, the name
+       the desktop app's prompt shows. Build and publish both leave it beside op.exe; a JIT
+       build's copy still loads op.dll, whose name the app host carries inside it. The build
+       inside a NativeAOT publish makes no app host, so only the publish copy applies there. -->
+  <Target Name="CopyLauncherAfterBuild" AfterTargets="Build" Condition="Exists('$(TargetDir)$(AssemblyName).exe')">
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).exe" DestinationFiles="$(TargetDir)OpWarden.exe" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyLauncherAfterPublish" AfterTargets="Publish">
+    <Copy SourceFiles="$(PublishDir)$(AssemblyName).exe" DestinationFiles="$(PublishDir)OpWarden.exe" />
+  </Target>
+
 </Project>
