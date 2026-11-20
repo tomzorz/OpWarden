@@ -108,4 +108,4 @@ Running any of these produces `*.jsonl` traces and `*.log` transcripts beside th
 
 ## Findings
 
-The three spike write-ups, with the measurement tables and the raw logs they point at, are kept outside this repository for the same reason. The conclusions they produced are in [the specification](../../docs/SPEC.md): the cacheable surface in section 9, and caller resolution in section 5.
+The raw logs are kept outside this repository for the same reason. The conclusions the spikes produced are in [the specification](../../docs/SPEC.md): the cacheable surface in section 9, and caller resolution with its rejected alternatives in section 5.

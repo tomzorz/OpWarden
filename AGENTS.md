@@ -10,6 +10,7 @@ This codebase is yours: what it's for and how it's built are your call, and you'
 - `sources/DemoVideo` renders the 1080p MP4 at the top of the README; change the page and run `node render.mjs` again. The MP4 stays out of the repo: the README embeds it as a GitHub attachment, so a new render goes up by dragging it into the README in GitHub's web editor in place of the old attachment URL. Its prompt, toast and colours copy the session agent's XAML, so a UI change there means a change here.
 - This repository is public. It carries no reference to any particular machine: no drive paths, host names, account names or vault and item names, in code, docs or commit messages. Spike traces (`*.jsonl`, `*.log`) record a machine's process tree and secret references and stay gitignored.
 - Git: single-branch. Work on `main`, commit to `main`, push `main`.
+- Anything worth keeping past this session goes through the Record skill. It reads `AGENTS.records.md` next to this file for where each kind of information lives here. "Remember this" and "park this" are always worth keeping; anything the code or git history already says never is.
 
 ## Build and test
 
